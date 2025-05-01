@@ -1,0 +1,11 @@
+sumionochi@Aadityas-MacBook-Pro tomodachi % sui keytool generate ed25519
+╭─────────────────┬──────────────────────────────────────────────────────────────────────╮
+│ alias           │                                                                      │
+│ suiAddress      │  0x22cee61751b53d6b239e5e79124495391449a6987a9d95c15a8bbce701ffc973  │
+│ publicBase64Key │  AL6dtDaURuvofTspEpGYSuQmKvb/Ns7d1KX/ndrCeWAa                        │
+│ keyScheme       │  ed25519                                                             │
+│ flag            │  0                                                                   │
+│ mnemonic        │  erase tattoo bind rug mask crouch key sketch grape under vote ride  │
+│ peerId          │  be9db4369446ebe87d3b291291984ae4262af6ff36ceddd4a5ff9ddac279601a    │
+╰─────────────────┴──────────────────────────────────────────────────────────────────────╯
+
