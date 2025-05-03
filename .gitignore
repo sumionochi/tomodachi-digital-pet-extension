@@ -32,7 +32,6 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
-Temp.txt
 # vercel
 .vercel
 
@@ -40,3 +39,4 @@ Temp.txt
 *.tsbuildinfo
 next-env.d.ts
 Temp.txt
+0x22cee61751b53d6b239e5e79124495391449a6987a9d95c15a8bbce701ffc973.key
