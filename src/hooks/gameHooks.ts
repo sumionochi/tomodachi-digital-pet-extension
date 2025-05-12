@@ -1,0 +1,210 @@
+// src/hooks/gameHooks.ts
+
+"use client";
+
+import { useEffect, useState, useCallback } from "react";
+import { useSuiClient } from '@mysten/dapp-kit';
+import { PACKAGE_ID, SCOREBOARD_ID } from "@/lib/sui";
+
+// Types
+export type Pet = { id: string; name: string };
+export type Asset = { id: string };
+export type EquippedAssets = Record<string, string>; // petId -> assetId
+
+// Helper to get Move struct type
+const PET_TYPE = `${PACKAGE_ID}::game::Pet`;
+const ASSET_TYPE = `${PACKAGE_ID}::game::Asset`;
+const ADMIN_CAP_TYPE = `${PACKAGE_ID}::game::AdminCap`;
+
+// Fetch user's score from ScoreBoard shared object
+async function fetchScore(address: string, suiClient: any): Promise<number | null> {
+  try {
+    const scoreboard = await suiClient.getObject({
+      id: SCOREBOARD_ID,
+      options: { showContent: true },
+    });
+    const fields = scoreboard.data?.content?.fields;
+    if (!fields) return null;
+    // scores is a Table<address, u64>
+    const scoresTableId = fields.scores.fields.id.id;
+    // Query the table for this address
+    const { value } = await suiClient.getDynamicFieldObject({
+      parentId: scoresTableId,
+      name: { type: "address", value: address },
+    });
+    return value?.data?.content?.fields?.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Check if user is registered (score entry exists)
+async function fetchIsRegistered(address: string, suiClient: any): Promise<boolean> {
+  try {
+    const scoreboard = await suiClient.getObject({
+      id: SCOREBOARD_ID,
+      options: { showContent: true },
+    });
+    const fields = scoreboard.data?.content?.fields;
+    if (!fields) return false;
+    const scoresTableId = fields.scores.fields.id.id;
+    const obj = await suiClient.getDynamicFieldObject({
+      parentId: scoresTableId,
+      name: { type: "address", value: address },
+    });
+    return !!obj.value?.data?.content?.fields?.value;
+  } catch {
+    return false;
+  }
+}
+
+// Fetch user's pets
+async function fetchPets(address: string, suiClient: any): Promise<Pet[]> {
+  const { data } = await suiClient.getOwnedObjects({
+    owner: address,
+    filter: { StructType: PET_TYPE },
+    options: { showContent: true },
+  });
+  return (
+    data
+      ?.map((obj: any) => ({
+        id: obj.data?.objectId,
+        name: obj.data?.content?.fields?.name,
+      }))
+      .filter((p: Pet) => !!p.id && !!p.name) || []
+  );
+}
+
+// Fetch user's assets
+async function fetchAssets(address: string, suiClient: any): Promise<Asset[]> {
+  const { data } = await suiClient.getOwnedObjects({
+    owner: address,
+    filter: { StructType: ASSET_TYPE },
+    options: { showContent: true },
+  });
+  return (
+    data
+      ?.map((obj: any) => ({
+        id: obj.data?.objectId,
+      }))
+      .filter((a: Asset) => !!a.id) || []
+  );
+}
+
+// Fetch equipped assets mapping (petId -> assetId)
+async function fetchEquippedAssets(address: string, suiClient: any): Promise<EquippedAssets> {
+  // For each pet, check dynamic fields for attached Asset
+  const pets = await fetchPets(address, suiClient);
+  const equipped: EquippedAssets = {};
+  await Promise.all(
+    pets.map(async (pet) => {
+      try {
+        // Each pet's UID is a container for dynamic fields (assets)
+        const { data } = await suiClient.getDynamicFields({
+          parentId: pet.id,
+        });
+        // Find the first Asset dynamic field (if any)
+        const assetField = data.find((f: any) => f.objectType === ASSET_TYPE);
+        if (assetField) {
+          equipped[pet.id] = assetField.name.value;
+        }
+      } catch {
+        // ignore
+      }
+    })
+  );
+  return equipped;
+}
+
+// Check if user owns AdminCap
+async function fetchIsAdmin(address: string, suiClient: any): Promise<boolean> {
+  const { data } = await suiClient.getOwnedObjects({
+    owner: address,
+    filter: { StructType: ADMIN_CAP_TYPE },
+    options: { showType: true },
+  });
+  return data.length > 0;
+}
+
+// Scoreboard hook
+export function useScoreboard(address?: string | null) {
+  const suiClient = useSuiClient();
+  const [score, setScore] = useState<number | null>(null);
+  const [isRegistered, setIsRegistered] = useState(false);
+
+  const refresh = useCallback(async () => {
+    if (!address) return;
+    setScore(await fetchScore(address, suiClient));
+    setIsRegistered(await fetchIsRegistered(address, suiClient));
+  }, [address, suiClient]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { score, isRegistered, refresh };
+}
+
+// Pets hook
+export function usePets(address?: string | null) {
+  const suiClient = useSuiClient();
+  const [pets, setPets] = useState<Pet[]>([]);
+
+  const refresh = useCallback(async () => {
+    if (!address) return;
+    setPets(await fetchPets(address, suiClient));
+  }, [address, suiClient]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { pets, refresh };
+}
+
+// Assets hook
+export function useAssets(address?: string | null) {
+  const suiClient = useSuiClient();
+  const [assets, setAssets] = useState<Asset[]>([]);
+
+  const refresh = useCallback(async () => {
+    if (!address) return;
+    setAssets(await fetchAssets(address, suiClient));
+  }, [address, suiClient]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { assets, refresh };
+}
+
+// EquippedAssets hook
+export function useEquippedAssets(address?: string | null) {
+  const suiClient = useSuiClient();
+  const [equippedAssets, setEquippedAssets] = useState<EquippedAssets>({});
+
+  const refresh = useCallback(async () => {
+    if (!address) return;
+    setEquippedAssets(await fetchEquippedAssets(address, suiClient));
+  }, [address, suiClient]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { equippedAssets, refresh };
+}
+
+// AdminCap hook
+export function useAdminCap(address?: string | null) {
+  const suiClient = useSuiClient();
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    if (!address) return;
+    fetchIsAdmin(address, suiClient).then(setIsAdmin);
+  }, [address, suiClient]);
+
+  return { isAdmin };
+}
