@@ -1,230 +1,482 @@
-'use client';
+"use client"
 
-import React, { useState } from 'react';
-import { ConnectButton, useCurrentAccount, useSuiClient, useSignAndExecuteTransaction } from '@mysten/dapp-kit';
-import { Button } from '@/components/ui/button'; // shadcn/ui
-import { mintAsset, createPet, checkIn, createUser, equipAsset, unequipAsset, adminResetScore } from '@/lib/sui';
-import { useScoreboard, usePets, useAssets, useEquippedAssets, useAdminCap } from '@/hooks/gameHooks';
+import { useState, useEffect } from "react"
+import {
+  ConnectButton,
+  useCurrentAccount,
+  useSuiClient,
+  useSignAndExecuteTransaction,
+} from "@mysten/dapp-kit"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from "@/components/ui/card"
+import {
+  mintAsset,
+  createPet,
+  checkIn,
+  createUser,
+  equipAsset,
+  unequipAsset,
+  adminResetScore,
+} from "@/lib/sui"
+import {
+  useScoreboard,
+  usePets,
+  useAssets,
+  useEquippedAssets,
+  useAdminCap,
+} from "@/hooks/gameHooks"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { cn } from "@/lib/utils"
+
+// Add the missing Bars3Icon component
+const Bars3Icon = ({ size = 24 }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <line x1="3" y1="6" x2="21" y2="6" />
+    <line x1="3" y1="12" x2="21" y2="12" />
+    <line x1="3" y1="18" x2="21" y2="18" />
+  </svg>
+);
 
 export default function HomePage() {
-  // Sui dApp Kit hooks
-  const suiClient = useSuiClient();
-  const account = useCurrentAccount();
-  const address = account?.address;
-  const { mutate: signAndExecute } = useSignAndExecuteTransaction();
+  const suiClient = useSuiClient()
+  const account = useCurrentAccount()
+  const address = account?.address
+  const { mutate: signAndExecute } = useSignAndExecuteTransaction()
 
-  // Game hooks
-  const { score, isRegistered, refresh: refreshScore } = useScoreboard(address);
-  const { pets, refresh: refreshPets } = usePets(address);
-  const { assets, refresh: refreshAssets } = useAssets(address);
-  const { equippedAssets, refresh: refreshEquipped } = useEquippedAssets(address);
-  const { isAdmin } = useAdminCap(address);
+  const { score, isRegistered, refresh: refreshScore } = useScoreboard(address)
+  const { pets, refresh: refreshPets } = usePets(address)
+  const { assets, refresh: refreshAssets } = useAssets(address)
+  const { equippedAssets, refresh: refreshEquipped } = useEquippedAssets(address)
+  const { isAdmin } = useAdminCap(address)
 
-  // UI state
-  const [petName, setPetName] = useState('');
-  const [mintingAsset, setMintingAsset] = useState(false);
-  const [equipping, setEquipping] = useState(false);
-  const [selectedPet, setSelectedPet] = useState<string | null>(null);
-  const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
-  const [adminUser, setAdminUser] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [petName, setPetName] = useState("")
+  const [mintingAsset, setMintingAsset] = useState(false)
+  const [equipping, setEquipping] = useState(false)
+  const [selectedPet, setSelectedPet] = useState<string | null>(null)
+  const [selectedAsset, setSelectedAsset] = useState<string | null>(null)
+  const [adminUser, setAdminUser] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [activeTab, setActiveTab] = useState<"home"|"pets"|"assets"|"more">("home")
 
-  // Handlers
+  const TABS: { key: Tab; label: string }[] = [
+    { key: "home",  label: "Home" },
+    { key: "pets",  label: "Pets" },
+    { key: "assets",label: "Assets" },
+    { key: "more",  label: "More" },
+  ]
+  
+  type Tab = "home" | "pets" | "assets" | "more"
+
+  useEffect(() => {
+    // Refresh data when account changes
+    if (address) {
+      refreshScore();
+      refreshPets();
+      refreshAssets();
+      refreshEquipped();
+    }
+  }, [address]);
+
+  // Add the missing onTabChange function
+  const onTabChange = (tab: Tab) => {
+    setActiveTab(tab);
+  };
+
+  // Add the missing onCheckIn and onRegister functions
+  const onCheckIn = () => {
+    handleCheckIn();
+  };
+
+  const onRegister = () => {
+    handleRegister();
+  };
+
   const handleRegister = async () => {
-    if (!address) return;
-    setLoading(true);
-    await createUser(address, suiClient, signAndExecute);
-    await refreshScore();
-    setLoading(false);
-  };
-
+    if (!address) return
+    setLoading(true)
+    await createUser(address, suiClient, signAndExecute)
+    await refreshScore()
+    setLoading(false)
+  }
   const handleCheckIn = async () => {
-    if (!address) return;
-    setLoading(true);
-    await checkIn(address, suiClient, signAndExecute);
-    await refreshScore();
-    setLoading(false);
-  };
-
+    if (!address) return
+    setLoading(true)
+    await checkIn(address, suiClient, signAndExecute)
+    await refreshScore()
+    setLoading(false)
+  }
   const handleCreatePet = async () => {
-    if (!address || !petName) return;
-    setLoading(true);
-    await createPet(address, suiClient, signAndExecute, petName);
-    setPetName('');
-    await refreshPets();
-    setLoading(false);
-  };
-
+    if (!address || !petName) return
+    setLoading(true)
+    await createPet(address, suiClient, signAndExecute, petName)
+    setPetName("")
+    await refreshPets()
+    setLoading(false)
+  }
   const handleMintAsset = async () => {
-    if (!address) return;
-    setMintingAsset(true);
-    await mintAsset(address, suiClient, signAndExecute);
-    await refreshAssets();
-    setMintingAsset(false);
-  };
-
+    if (!address) return
+    setMintingAsset(true)
+    await mintAsset(address, suiClient, signAndExecute)
+    await refreshAssets()
+    setMintingAsset(false)
+  }
   const handleEquip = async () => {
-    if (!address || !selectedPet || !selectedAsset) return;
-    setEquipping(true);
-    await equipAsset(address, suiClient, signAndExecute, selectedPet, selectedAsset);
-    await refreshEquipped();
-    setEquipping(false);
-  };
-
+    if (!address || !selectedPet || !selectedAsset) return
+    setEquipping(true)
+    await equipAsset(address, suiClient, signAndExecute, selectedPet, selectedAsset)
+    await refreshEquipped()
+    setEquipping(false)
+  }
   const handleUnequip = async (petId: string, assetId: string) => {
-    if (!address) return;
-    setEquipping(true);
-    await unequipAsset(address, suiClient, signAndExecute, petId, assetId);
-    await refreshEquipped();
-    setEquipping(false);
-  };
-
+    if (!address) return
+    setEquipping(true)
+    await unequipAsset(address, suiClient, signAndExecute, petId, assetId)
+    await refreshEquipped()
+    setEquipping(false)
+  }
   const handleAdminReset = async () => {
-    if (!address || !adminUser) return;
-    setLoading(true);
-    await adminResetScore(address, suiClient, signAndExecute, adminUser);
-    setAdminUser('');
-    setLoading(false);
-  };
-
-  // UI
-  if (!account) {
-    return (
-      <main className="flex flex-col items-center justify-center min-h-screen">
-        <div className='m-2 cursor-pointer'>
-          <ConnectButton />
-        </div>
-        <p className="mt-4">Connect your Sui wallet to play Tomodachi!</p>
-      </main>
-    );
+    if (!address || !adminUser) return
+    setLoading(true)
+    await adminResetScore(address, suiClient, signAndExecute, adminUser)
+    setAdminUser("")
+    setLoading(false)
   }
 
-  return (
-    <main className="max-w-2xl mx-auto py-8 px-4">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Tomodachi Game</h1>
-        <ConnectButton />
-      </div>
+  // Unauthenticated welcome
+  if (!account) {
+    return (
+      <main className="flex items-center justify-center h-full w-full p-4">
+        <Card className="max-w-md w-full">
+          <CardHeader className="text-center flex flex-col gap-4 items-center justify-center">
+            <h1 className="text-2xl font-bold">Welcome to SuiPet</h1>
+            <CardDescription>
+              Adopt your virtual pet on Sui blockchain. Interact, earn points,
+              and customize your companion.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col space-y-4 cursor-pointer">
+            <ConnectButton className="w-full cursor-pointer" />
+          </CardContent>
+        </Card>
+      </main>
+    )
+  }
 
-      <section className="mb-6">
-        <h2 className="font-semibold mb-2">Your Progress</h2>
-        <div className="flex items-center gap-4">
-          <span>Score: <b>{score ?? '-'}</b></span>
+
+  // Authenticated dashboard
+  return (
+    <div className="bg-background text-foreground min-h-screen flex flex-col">
+      {/* Navbar */}
+      <nav className="bg-background border-b">
+        <div className="container mx-auto max-w-6xl flex items-center justify-between p-4">
+          {/* Logo / Title */}
+          <h1 className="text-2xl font-bold">SuiPet</h1>
+
+          {/* Large-screen tabs */}
+          <div className="hidden md:flex space-x-4">
+            {TABS.map(({ key, label }) => (
+              <Button
+                key={key}
+                onClick={() => onTabChange(key)}
+                className={cn(
+                  "px-3 py-1 rounded-md font-medium border cursor-pointer",
+                  activeTab === key
+                    ? "bg-secondary text-secondary-foreground hover:bg-primary/30"
+                    : "hover:bg-primary/90"
+                )}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+
+          {/* Mobile menu */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button className="md:hidden p-2 rounded hover:bg-primary/10">
+                <Bars3Icon size={20} />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-40 flex flex-col gap-4">
+              {TABS.map(({ key, label }) => (
+                <Button
+                  key={key}
+                  onClick={() => {
+                    onTabChange(key)
+                  }}
+                  className={cn(
+                    "w-full text-left px-2 py-1 rounded-md font-medium border cursor-pointer",
+                    activeTab === key
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-primary/10"
+                  )}
+                >
+                  {label}
+                </Button>
+              ))}
+            </PopoverContent>
+          </Popover>
+
+          {/* Spacer */}
+          <div className="flex-1 md:hidden" />
+
+          {/* Score & Check-In/Register */}
+          <div className="hidden sm:flex items-center space-x-4">
+            <div>
+              <span className="text-sm">Score:</span>{" "}
+              <span className="font-mono">{score ?? 0}</span>
+            </div>
+            {isRegistered ? (
+              <Button
+                size="default"
+                onClick={onCheckIn}
+                disabled={loading}
+                className="cursor-pointer"
+              >
+                Daily Check-In
+              </Button>
+            ) : (
+              <Button
+                size="default"
+                onClick={onRegister}
+                disabled={loading}
+                className="cursor-pointer"
+              >
+                Register
+              </Button>
+            )}
+          </div>
+
+          {/* Wallet */}
+          <div className="ml-4 cursor-pointer">
+            <ConnectButton className="cursor-pointer" />
+          </div>
+        </div>
+      </nav>
+
+      {/* Mobile score display & actions */}
+      <div className="sm:hidden p-4 border-b">
+        <div className="flex justify-between items-center">
+          <div>
+            <span className="text-sm">Score:</span>{" "}
+            <span className="font-mono">{score ?? 0}</span>
+          </div>
           {isRegistered ? (
-            <Button onClick={handleCheckIn} disabled={loading}>Daily Check-In (+2)</Button>
+            <Button
+              size="sm"
+              onClick={onCheckIn}
+              disabled={loading}
+            >
+              Daily Check-In
+            </Button>
           ) : (
-            <Button onClick={handleRegister} disabled={loading}>Register</Button>
+            <Button
+              size="sm"
+              onClick={onRegister}
+              disabled={loading}
+            >
+              Register
+            </Button>
           )}
         </div>
-      </section>
+      </div>
 
-      <section className="mb-6">
-        <h2 className="font-semibold mb-2">Your Pets</h2>
-        <div className="flex gap-2 mb-2">
-          <input
-            className="border px-2 py-1 rounded"
-            placeholder="Pet name"
-            value={petName}
-            onChange={e => setPetName(e.target.value)}
-          />
-          <Button onClick={handleCreatePet} disabled={loading || !petName}>Create Pet</Button>
-        </div>
-        <ul>
-          {pets.map(pet => (
-            <li key={pet.id} className="mb-1">
-              <span className="font-mono">{pet.name}</span> (ID: {pet.id})
-              {equippedAssets[pet.id] && (
-                <span className="ml-2 text-xs text-green-600">Equipped: {equippedAssets[pet.id]}</span>
-              )}
-            </li>
-          ))}
-        </ul>
-      </section>
+      {/* Content */}
+      <main className="container mx-auto max-w-6xl p-4 mt-4 flex-1 space-y-8">
+        {activeTab === "home" && (
+          <Card>
+            <CardHeader>
+              <h1 className="text-2xl font-bold">Introduction</h1>
+            </CardHeader>
+            <CardContent>
+              <p className="mb-4">
+                Welcome to SuiPet, a virtual pet platform built on the Sui blockchain!
+              </p>
+              <p className="mb-4">
+                Here's how to get started:
+              </p>
+              <ul className="list-disc list-inside space-y-2">
+                <li>Register your account to start earning points</li>
+                <li>Check in daily to earn more points</li>
+                <li>Create pets with unique names</li>
+                <li>Mint assets (accessories) for 10 points each</li>
+                <li>Equip your pets with these assets to customize them</li>
+              </ul>
+              <p className="mt-4">
+                Our growth-oriented pet comes with an NFT overlay as its core
+                technology. Interact to earn points, then spend them on pet
+                clothing and accessories!
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
-      <section className="mb-6">
-        <h2 className="font-semibold mb-2">Your Assets</h2>
-        <Button onClick={handleMintAsset} disabled={mintingAsset || (score ?? 0) < 10}>
-          Mint Asset (10 pts)
-        </Button>
-        <ul className="mt-2">
-          {assets.map(asset => (
-            <li key={asset.id} className="mb-1">
-              <span className="font-mono">Asset #{asset.id}</span>
-              <Button
-                size="sm"
-                className="ml-2"
-                onClick={() => setSelectedAsset(asset.id)}
-                variant={selectedAsset === asset.id ? 'default' : 'outline'}
-              >
-                {selectedAsset === asset.id ? 'Selected' : 'Select'}
-              </Button>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="mb-6">
-        <h2 className="font-semibold mb-2">Equip Asset to Pet</h2>
-        <div className="flex gap-2 mb-2">
-          <select
-            className="border px-2 py-1 rounded"
-            value={selectedPet ?? ''}
-            onChange={e => setSelectedPet(e.target.value)}
-          >
-            <option value="">Select Pet</option>
-            {pets.map(pet => (
-              <option key={pet.id} value={pet.id}>{pet.name}</option>
-            ))}
-          </select>
-          <select
-            className="border px-2 py-1 rounded"
-            value={selectedAsset ?? ''}
-            onChange={e => setSelectedAsset(e.target.value)}
-          >
-            <option value="">Select Asset</option>
-            {assets.map(asset => (
-              <option key={asset.id} value={asset.id}>Asset #{asset.id}</option>
-            ))}
-          </select>
-          <Button onClick={handleEquip} disabled={equipping || !selectedPet || !selectedAsset}>
-            Equip
-          </Button>
-        </div>
-        <div>
-          {pets.map(pet => (
-            equippedAssets[pet.id] && (
-              <div key={pet.id} className="flex items-center gap-2">
-                <span>{pet.name} has Asset #{equippedAssets[pet.id]}</span>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={() => handleUnequip(pet.id, equippedAssets[pet.id])}
-                  disabled={equipping}
-                >
-                  Unequip
+        {activeTab === "pets" && (
+          <Card>
+            <CardHeader>
+              <h1 className="text-2xl font-bold">Your Pets</h1>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex space-x-2">
+                <Input
+                  placeholder="Pet name"
+                  value={petName}
+                  onChange={e=>setPetName(e.target.value)}
+                />
+                <Button onClick={handleCreatePet} disabled={loading}>
+                  Create Pet
                 </Button>
               </div>
-            )
-          ))}
-        </div>
-      </section>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {pets.length>0 ? pets.map(pet=>(
+                  <Card key={pet.id} className="p-2">
+                    <CardHeader>
+                      <h1 className="text-2xl font-bold">{pet.name}</h1>
+                      <CardDescription>ID: {pet.id}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {equippedAssets[pet.id] && (
+                        <div>
+                          <p>Equipped: Asset #{equippedAssets[pet.id]}</p>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={()=>handleUnequip(pet.id,equippedAssets[pet.id])}
+                            disabled={equipping}
+                          >
+                            Unequip
+                          </Button>
+                        </div>
+                      )}
+                      <Button
+                        size="sm"
+                        variant={selectedPet === pet.id ? "default" : "outline"}
+                        onClick={()=>setSelectedPet(pet.id)}
+                      >
+                        {selectedPet===pet.id?"Selected":"Select"}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )) : (
+                  <p>No pets yet. Create one above!</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-      {isAdmin && (
-        <section className="mb-6">
-          <h2 className="font-semibold mb-2">Admin Controls</h2>
-          <div className="flex gap-2">
-            <input
-              className="border px-2 py-1 rounded"
-              placeholder="User address"
-              value={adminUser}
-              onChange={e => setAdminUser(e.target.value)}
-            />
-            <Button onClick={handleAdminReset} disabled={loading || !adminUser}>
-              Reset User Score
-            </Button>
-          </div>
-        </section>
-      )}
-    </main>
-  );
+        {activeTab === "assets" && (
+          <Card>
+            <CardHeader>
+              <h1 className="text-2xl font-bold">Your Assets</h1>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Button
+                onClick={handleMintAsset}
+                disabled={mintingAsset || (score ?? 0) < 10}
+              >
+                Mint Asset (10 pts)
+              </Button>
+              {(score ?? 0) < 10 && (
+                <p className="text-sm text-muted-foreground">
+                  You need at least 10 points to mint an asset. Check in daily to earn more!
+                </p>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {assets.length>0 ? assets.map(asset=>(
+                  <Card key={asset.id} className="p-2">
+                    <CardHeader>
+                      <h1 className="text-2xl font-bold">Asset #{asset.id}</h1>
+                    </CardHeader>
+                    <CardContent>
+                      <Button
+                        size="sm"
+                        variant={selectedAsset===asset.id?"default":"outline"}
+                        onClick={()=>setSelectedAsset(asset.id)}
+                      >
+                        {selectedAsset===asset.id?"Selected":"Select"}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )) : <p>No assets yet. Mint one above!</p>}
+              </div>
+              {selectedPet && selectedAsset && (
+                <div className="flex items-center space-x-4">
+                  <p>
+                    Equip Asset #{selectedAsset} to{" "}
+                    {pets.find(p=>p.id===selectedPet)?.name}
+                  </p>
+                  <Button onClick={handleEquip} disabled={equipping}>
+                    Equip
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {activeTab === "more" && (
+          <Card>
+            <CardHeader>
+              <h1 className="text-2xl font-bold">More Options</h1>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {isAdmin && (
+                <div className="space-y-2">
+                  <h3 className="text-lg font-medium">Admin Controls</h3>
+                  <Input
+                    placeholder="User address"
+                    value={adminUser}
+                    onChange={e=>setAdminUser(e.target.value)}
+                  />
+                  <Button
+                    variant="destructive"
+                    onClick={handleAdminReset}
+                    disabled={loading || !adminUser}
+                  >
+                    Reset User Score
+                  </Button>
+                </div>
+              )}
+              <div>
+                <h3 className="text-lg font-medium mb-2">About SuiPet</h3>
+                <p className="mb-4">
+                  SuiPet is a virtual pet platform built on the Sui
+                  blockchain. Earn points, mint assets, and customize your digital
+                  companion!
+                </p>
+                <p>
+                  Check back regularly for new features and updates to the SuiPet platform.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </main>
+
+      {/* Footer */}
+      <footer className="bg-background border-t py-4">
+        <div className="container mx-auto text-center text-sm text-muted-foreground">
+          <p>© 2025 SuiPet - A virtual pet platform on the Sui blockchain</p>
+        </div>
+      </footer>
+    </div>
+  )
 }
