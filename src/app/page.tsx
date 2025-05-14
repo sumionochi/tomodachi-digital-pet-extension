@@ -35,7 +35,16 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 
-// Add the missing Bars3Icon component
+import { ReactSketchCanvas, ReactSketchCanvasRef } from "react-sketch-canvas";
+import { useRef } from "react";
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from "@/components/ui/collapsible";
+import { motion, AnimatePresence } from "framer-motion";
+import { ChevronDown, ChevronRight } from "lucide-react";
+
 const Bars3Icon = ({ size = 24 }) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -83,8 +92,40 @@ export default function HomePage() {
   const [metaAttributes, setMetaAttributes]   = useState<string>('');
   const [actionValue, setActionValue]   = useState<number>(0);
   const [framesValue, setFramesValue]   = useState<number>(1);
+  const [introOpen, setIntroOpen] = useState(true);
 
-  
+  const [mode, setMode] = useState<"prompt" | "sketch">("prompt");
+  const canvasRef = useRef<ReactSketchCanvasRef>(null);
+
+  const handleUploadBase64 = async (b64: string) => {
+    setLoading(true);
+    try {
+      const uploadRes = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ b64 }),
+      });
+      const { blobId } = await uploadRes.json();
+      setPreviewUrl(`${process.env.NEXT_PUBLIC_WALRUS_BASE_URL}/${blobId}`);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleExportSketch = async () => {
+    if (!canvasRef.current) return;
+    try {
+      // returns data:image/png;base64,XXXX
+      const dataUrl = await canvasRef.current.exportImage("png");
+      const b64 = dataUrl.split(",")[1];        // strip prefix
+      setGeneratedB64(b64);
+      await handleUploadBase64(b64);
+    } catch (e) {
+      console.error("Sketch export failed:", e);
+    }
+  };
 
   const TABS: { key: Tab; label: string }[] = [
     { key: "home",  label: "Home" },
@@ -198,6 +239,7 @@ export default function HomePage() {
     await refreshEquipped()
     setEquipping(false)
   }
+
   const handleUnequip = async (petId: string, assetId: string) => {
     if (!address) return
     setEquipping(true)
@@ -205,6 +247,7 @@ export default function HomePage() {
     await refreshEquipped()
     setEquipping(false)
   }
+
   const handleAdminReset = async () => {
     if (!address || !adminUser) return
     setLoading(true)
@@ -219,10 +262,9 @@ export default function HomePage() {
       <main className="flex items-center justify-center h-full w-full p-4">
         <Card className="max-w-md w-full">
           <CardHeader className="text-center flex flex-col gap-4 items-center justify-center">
-            <h1 className="text-2xl font-bold">Welcome to SuiPet</h1>
+            <h1 className="text-2xl font-bold">Welcome to Tomodachi Pets</h1>
             <CardDescription>
-              Adopt your virtual pet on Sui blockchain. Interact, earn points,
-              and customize your companion.
+              Adopt your virtual pet on the Sui blockchain. Interact, earn points, and customize your companion.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col space-y-4 cursor-pointer">
@@ -233,7 +275,6 @@ export default function HomePage() {
     )
   }
 
-
   // Authenticated dashboard
   return (
     <div className="bg-background text-foreground min-h-screen flex flex-col">
@@ -241,7 +282,7 @@ export default function HomePage() {
       <nav className="bg-background border-b">
         <div className="container mx-auto max-w-6xl flex items-center justify-between p-4">
           {/* Logo / Title */}
-          <h1 className="text-2xl font-bold">SuiPet</h1>
+          <h1 className="text-2xl font-bold">Tomodachi Pets</h1>
 
           {/* Large-screen tabs */}
           <div className="hidden md:flex space-x-4">
@@ -354,33 +395,137 @@ export default function HomePage() {
 
       {/* Content */}
       <main className="container mx-auto max-w-6xl p-4 mt-4 flex-1 space-y-8">
-        {activeTab === "home" && (
-          <Card>
-            <CardHeader>
-              <h1 className="text-2xl font-bold">Introduction</h1>
-            </CardHeader>
-            <CardContent>
-              <p className="mb-4">
-                Welcome to SuiPet, a virtual pet platform built on the Sui blockchain!
-              </p>
-              <p className="mb-4">
-                Here's how to get started:
-              </p>
-              <ul className="list-disc list-inside space-y-2">
-                <li>Register your account to start earning points</li>
-                <li>Check in daily to earn more points</li>
-                <li>Create pets with unique names</li>
-                <li>Mint assets (accessories) for 10 points each</li>
-                <li>Equip your pets with these assets to customize them</li>
-              </ul>
-              <p className="mt-4">
-                Our growth-oriented pet comes with an NFT overlay as its core
-                technology. Interact to earn points, then spend them on pet
-                clothing and accessories!
-              </p>
-            </CardContent>
-          </Card>
-        )}
+      {activeTab === "home" && (
+        <div>
+          <Collapsible open={introOpen} onOpenChange={setIntroOpen}>
+            <CollapsibleTrigger asChild>
+              <Card className="cursor-pointer flex flex-row justify-between items-center">
+                <CardHeader className="w-full">
+                  <h1 className="text-2xl font-bold">
+                    Welcome to Tomodachi Pets : a Digital Pet Game
+                  </h1>
+                  <CardDescription>
+                    Your AI-powered, on-chain virtual pet playground
+                  </CardDescription>
+                </CardHeader>
+                <div className="pr-4">
+                  {introOpen ? (
+                    <ChevronDown size={24} />
+                  ) : (
+                    <ChevronRight size={24} />
+                  )}
+                </div>
+              </Card>
+            </CollapsibleTrigger>
+
+            <AnimatePresence initial={false}>
+              {introOpen && (
+                <motion.div
+                  key="intro"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.3, ease: "easeInOut" }}
+                >
+                  <CollapsibleContent forceMount>
+                    <Card className="mt-4">
+                      <CardContent>
+                        <p className="mb-4">
+                          Tomodachi Pets lets you <strong>draw or prompt</strong> custom pet accessories, mint them as NFTs on Sui,
+                          and <strong>dynamically bundle</strong> them into your pet to watch it come to life.
+                        </p>
+
+                        <h3 className="text-lg font-medium mb-2">How It Works</h3>
+                        <ol className="list-decimal list-inside space-y-2 mb-4">
+                          <li>
+                            <strong>Sketch or Type</strong> — give us a prompt (e.g. "ghibli fluffy cat")
+                          </li>
+                          <li>
+                            <strong>AI-Gen Service</strong> calls GPT-Image-1 → returns a transparent PNG
+                          </li>
+                          <li>
+                            <strong>Walrus Storage</strong> stores your image and returns a URL
+                          </li>
+                          <li>
+                            <strong>Mint Accessory</strong> — spend 10 points to mint that URL as an Asset NFT
+                          </li>
+                          <li>
+                            <strong>Create & Customize Pet</strong> — mint a named Pet NFT, then equip/unequip your accessories via dynamic fields
+                          </li>
+                        </ol>
+
+                        <h3 className="text-lg font-medium mb-2">Game Loop & Rewards</h3>
+                        <ul className="list-disc list-inside space-y-2">
+                          <li>📅 <strong>Daily Check-In:</strong> earn 2 points every day</li>
+                          <li>🏆 <strong>Spend Points:</strong> mint unique accessories (10 pts each)</li>
+                          <li>🎨 <strong>Express Yourself:</strong> build a one-of-a-kind pet with your own designs</li>
+                          <li>🔄 <strong>Composable NFTs:</strong> equip, unequip, or swap assets anytime</li>
+                        </ul>
+
+                        <p className="mt-4 text-sm text-muted-foreground">
+                          All images and metadata live on-chain and in Walrus, giving you full ownership and on-the-fly composability.
+                        </p>
+                      </CardContent>
+                    </Card>
+                  </CollapsibleContent>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </Collapsible>
+
+          {/* Prompt/Sketch Mode Toggle */}
+          <div className="flex space-x-2 mt-6 mb-4">
+            <Button
+              variant={mode === "prompt" ? "default" : "outline"}
+              onClick={() => setMode("prompt")}
+            >
+              Prompt
+            </Button>
+            <Button
+              variant={mode === "sketch" ? "default" : "outline"}
+              onClick={() => setMode("sketch")}
+            >
+              Sketch
+            </Button>
+          </div>
+
+          {/* Prompt Mode UI */}
+          {mode === "prompt" && (
+            <div className="space-y-2">
+              <Input
+                placeholder="Describe your asset"
+                value={prompt}
+                onChange={e => setPrompt(e.target.value)}
+              />
+              <Button onClick={handleGenerate} disabled={loading || !prompt}>
+                Generate Preview
+              </Button>
+            </div>
+          )}
+
+          {/* Sketch Mode UI */}
+          {mode === "sketch" && (
+            <div className="space-y-2 w-full">
+              <ReactSketchCanvas
+                ref={canvasRef}
+                width="512px"
+                height="512px"
+                strokeWidth={4}
+                className="border rounded"
+              />
+              <div className="flex space-x-2">
+                <Button onClick={handleExportSketch} disabled={loading}>
+                  Export Sketch
+                </Button>
+                <Button onClick={() => canvasRef.current?.clearCanvas()}>
+                  Clear
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+ 
 
         {activeTab === "pets" && (
           <Card>
@@ -587,9 +732,9 @@ export default function HomePage() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-background border-t py-4">
+      <footer className="bg-background border-t py-4 mt-4">
         <div className="container mx-auto text-center text-sm text-muted-foreground">
-          <p>© 2025 SuiPet - A virtual pet platform on the Sui blockchain</p>
+          <p>© 2025 Tomodachi Pets - A virtual pet simulator on the Sui blockchain</p>
         </div>
       </footer>
     </div>
