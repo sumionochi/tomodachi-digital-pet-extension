@@ -11,7 +11,6 @@ module tomodachiaddress::game {
     const PRICE_ASSET:        u64 = 10;
     const EAlreadyEquipped:   u64 = 3;
     const EAssetNotEquipped:  u64 = 4;
-    const EAlreadyMinted:     u64 = 5;
     const ENameTaken:         u64 = 6;
     const EAssetAlreadyEquipped: u64 = 7;
 
@@ -30,10 +29,10 @@ module tomodachiaddress::game {
         scores: Table<address, u64>,
     }
 
-    // === MINT TRACKING ===
+    // === MINT TRACKING (multiple assets per user) ===
     public struct MintRecord has key, store {
         id: UID,
-        record: Table<address, bool>,
+        record: Table<address, vector<ID>>, // Now tracks multiple asset IDs per user
     }
 
     // === PET NAME TRACKING ===
@@ -64,7 +63,6 @@ module tomodachiaddress::game {
         asset_id: ID,
     }
 
-
     // === INIT ===
     fun init(ctx: &mut TxContext) {
         internal_setup(ctx);
@@ -81,7 +79,7 @@ module tomodachiaddress::game {
 
         let record = MintRecord {
             id: object::new(ctx),
-            record: table::new<address, bool>(ctx),
+            record: table::new<address, vector<ID>>(ctx), // Updated
         };
 
         let pet_names = PetNames {
@@ -118,12 +116,15 @@ module tomodachiaddress::game {
         *score_ref = *score_ref + 2;
     }
 
-    // === MINT ASSET (with MintRecord) ===
+    // === MINT ASSET (multiple assets per user, richer metadata) ===
     public entry fun mint_asset(
         _mint_cap: &mut UserMintCap,
         scores:   &mut ScoreBoard,
         record:   &mut MintRecord,
         equipped_assets: &mut EquippedAssets,
+        name:     String,
+        description: String,
+        attributes: String, // Could be a JSON string or similar
         action:   u8,
         frames:   u8,
         url:      String,
@@ -131,33 +132,36 @@ module tomodachiaddress::game {
     ) {
         let sender = tx_context::sender(ctx);
 
-        // 1) Prevent double-minting
-        let already_minted = table::contains(&record.record, sender);
-        assert!(!already_minted, EAlreadyMinted);
-
-        // 2) Pull and check score atomically
+        // 1) Pull and check score atomically
         let score_ref = table::borrow_mut(&mut scores.scores, sender);
         assert!(*score_ref >= PRICE_ASSET, EScoreNotEnough);
         *score_ref = *score_ref - PRICE_ASSET;
 
-        // 3) Mark as minted
-        table::add(&mut record.record, sender, true);
-
-        // 4) Mint the Asset object and transfer it to the user
+        // 2) Mint the Asset object and transfer it to the user
         let asset = Asset {
             id:     object::new(ctx),
             url,
             action,
             frames,
+            name,
+            description,
+            attributes,
         };
         let asset_id = object::id(&asset);
 
-        // 5) Mark asset as not equipped anywhere yet
+        // 3) Mark asset as not equipped anywhere yet
         table::add(&mut equipped_assets.assets, asset_id, false);
+
+        // 4) Track asset in user's mint record
+        if (!table::contains(&record.record, sender)) {
+            table::add(&mut record.record, sender, vector::empty<ID>());
+        };
+        let asset_vec = table::borrow_mut(&mut record.record, sender);
+        vector::push_back<ID>(asset_vec, asset_id);
 
         transfer::transfer(asset, sender);
 
-        // 6) Emit event
+        // 5) Emit event
         event::emit(MintEvent { user: sender, asset_id });
     }
 
@@ -189,11 +193,15 @@ module tomodachiaddress::game {
         name: String,
     }
 
+    /// Richer Asset struct
     public struct Asset has key, store {
         id:     UID,
         url:    String,
         action: u8,
         frames: u8,
+        name:   String,
+        description: String,
+        attributes: String,
     }
 
     // === EQUIP ASSET (with global uniqueness) ===
