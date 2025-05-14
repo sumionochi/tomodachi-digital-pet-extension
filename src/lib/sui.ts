@@ -13,11 +13,7 @@ export const EQUIPPED_ASSETS_ID   = process.env.NEXT_PUBLIC_EQUIPPED_ASSETS_ID!;
 
 // Helper: find a capability object owned by the user
 export async function findCap(address: string, type: string, suiClient: SuiClient) {
-  const { data } = await suiClient.getOwnedObjects({
-    owner: address,
-    filter: { StructType: type },
-    options: { showType: true, showOwner: true },
-  });
+  const { data } = await suiClient.getOwnedObjects({ owner: address, filter: { StructType: type }, options: { showType: true } });
   if (!data.length) throw new Error(`No ${type} found for address ${address}`);
   return data[0].data?.objectId!;
 }
@@ -45,7 +41,17 @@ export async function checkIn(address: string, suiClient: SuiClient, signAndExec
 }
 
 // 3. Mint asset
-export async function mintAsset(address: string, suiClient: SuiClient, signAndExecute: any, action: number = 0, frames: number = 1, url: string = '') {
+export async function mintAsset(
+  address: string,
+  suiClient: SuiClient,
+  signAndExecute: any,
+  action: number,
+  frames: number,
+  url: string,
+  name: string,
+  description: string,
+  attributes: string,
+) {
   const mintCapId = await findCap(address, `${PACKAGE_ID}::${MODULE}::UserMintCap`, suiClient);
   const tx = new Transaction();
   tx.moveCall({
@@ -55,6 +61,9 @@ export async function mintAsset(address: string, suiClient: SuiClient, signAndEx
       tx.object(SCOREBOARD_ID),
       tx.object(MINT_RECORD_ID),
       tx.object(EQUIPPED_ASSETS_ID),
+      tx.pure.string(name),
+      tx.pure.string(description),
+      tx.pure.string(attributes),
       tx.pure.u8(action),
       tx.pure.u8(frames),
       tx.pure.string(url),
@@ -62,6 +71,7 @@ export async function mintAsset(address: string, suiClient: SuiClient, signAndEx
   });
   return signAndExecute({ transactionBlock: tx });
 }
+
 
 // 4. Create pet
 export async function createPet(address: string, suiClient: SuiClient, signAndExecute: any, name: string) {

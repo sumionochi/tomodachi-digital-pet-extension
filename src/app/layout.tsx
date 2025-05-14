@@ -30,7 +30,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={nunito.className} suppressHydrationWarning>
       <body
-        className={` font-sans antialiased relative`}
+        className={`font-sans antialiased relative`}
       >
         <div className="texture" />
         <ThemeProvider attribute="class" defaultTheme="light">

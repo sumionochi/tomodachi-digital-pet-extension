@@ -8,7 +8,15 @@ import { PACKAGE_ID, SCOREBOARD_ID } from "@/lib/sui";
 
 // Types
 export type Pet = { id: string; name: string };
-export type Asset = { id: string };
+export type Asset = {
+  id: string;
+  url: string;
+  action: number;
+  frames: number;
+  name: string;
+  description: string;
+  attributes: string;
+};
 export type EquippedAssets = Record<string, string>; // petId -> assetId
 
 // Helper to get Move struct type
@@ -76,6 +84,7 @@ async function fetchPets(address: string, suiClient: any): Promise<Pet[]> {
 }
 
 // Fetch user's assets
+
 async function fetchAssets(address: string, suiClient: any): Promise<Asset[]> {
   const { data } = await suiClient.getOwnedObjects({
     owner: address,
@@ -83,11 +92,15 @@ async function fetchAssets(address: string, suiClient: any): Promise<Asset[]> {
     options: { showContent: true },
   });
   return (
-    data
-      ?.map((obj: any) => ({
-        id: obj.data?.objectId,
-      }))
-      .filter((a: Asset) => !!a.id) || []
+    data?.map((obj: any) => ({
+      id: obj.data.objectId,
+      url: obj.data.content.fields.url,
+      action: obj.data.content.fields.action,
+      frames: obj.data.content.fields.frames,
+      name: obj.data.content.fields.name,
+      description: obj.data.content.fields.description,
+      attributes: obj.data.content.fields.attributes,
+    })) || []
   );
 }
 

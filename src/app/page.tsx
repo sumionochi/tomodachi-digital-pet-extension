@@ -75,6 +75,17 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<"home"|"pets"|"assets"|"more">("home")
 
+  const [prompt, setPrompt] = useState<string>('');
+  const [generatedB64, setGeneratedB64] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl]     = useState<string | null>(null);
+  const [metaName, setMetaName]         = useState<string>('');
+  const [metaDescription, setMetaDescription] = useState<string>('');
+  const [metaAttributes, setMetaAttributes]   = useState<string>('');
+  const [actionValue, setActionValue]   = useState<number>(0);
+  const [framesValue, setFramesValue]   = useState<number>(1);
+
+  
+
   const TABS: { key: Tab; label: string }[] = [
     { key: "home",  label: "Home" },
     { key: "pets",  label: "Pets" },
@@ -108,6 +119,30 @@ export default function HomePage() {
     handleRegister();
   };
 
+  const handleGenerate = async () => {
+    setLoading(true);
+    try {
+      // 1) Generate via GPT-Image-1
+      const genRes = await fetch(`/api/generate?prompt=${encodeURIComponent(prompt)}`);
+      const { b64 } = await genRes.json();
+      setGeneratedB64(b64);
+
+      // 2) Upload to Walrus
+      const uploadRes = await fetch(`/api/upload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ b64 }),
+      });
+      const { blobId } = await uploadRes.json();
+      const url = `${process.env.NEXT_PUBLIC_WALRUS_BASE_URL}/${blobId}`;
+      setPreviewUrl(url);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleRegister = async () => {
     if (!address) return
     setLoading(true)
@@ -130,13 +165,32 @@ export default function HomePage() {
     await refreshPets()
     setLoading(false)
   }
-  const handleMintAsset = async () => {
-    if (!address) return
-    setMintingAsset(true)
-    await mintAsset(address, suiClient, signAndExecute)
-    await refreshAssets()
-    setMintingAsset(false)
-  }
+  const handleMintAssetWithMeta = async () => {
+    if (!address || !previewUrl) return;
+    setMintingAsset(true);
+    await mintAsset(
+      address,
+      suiClient,
+      signAndExecute,
+      actionValue,
+      framesValue,
+      previewUrl,
+      metaName,
+      metaDescription,
+      metaAttributes,
+    );
+    await refreshAssets();
+    // reset
+    setPrompt('');
+    setGeneratedB64(null);
+    setPreviewUrl(null);
+    setMetaName('');
+    setMetaDescription('');
+    setMetaAttributes('');
+    setActionValue(0);
+    setFramesValue(1);
+    setMintingAsset(false);
+  };
   const handleEquip = async () => {
     if (!address || !selectedPet || !selectedAsset) return
     setEquipping(true)
@@ -387,41 +441,101 @@ export default function HomePage() {
             <CardHeader>
               <h1 className="text-2xl font-bold">Your Assets</h1>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <Button
-                onClick={handleMintAsset}
-                disabled={mintingAsset || (score ?? 0) < 10}
-              >
-                Mint Asset (10 pts)
-              </Button>
-              {(score ?? 0) < 10 && (
-                <p className="text-sm text-muted-foreground">
-                  You need at least 10 points to mint an asset. Check in daily to earn more!
-                </p>
-              )}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {assets.length>0 ? assets.map(asset=>(
-                  <Card key={asset.id} className="p-2">
-                    <CardHeader>
-                      <h1 className="text-2xl font-bold">Asset #{asset.id}</h1>
-                    </CardHeader>
-                    <CardContent>
-                      <Button
-                        size="sm"
-                        variant={selectedAsset===asset.id?"default":"outline"}
-                        onClick={()=>setSelectedAsset(asset.id)}
-                      >
-                        {selectedAsset===asset.id?"Selected":"Select"}
-                      </Button>
-                    </CardContent>
-                  </Card>
-                )) : <p>No assets yet. Mint one above!</p>}
+            <CardContent className="space-y-6">
+              {/* 1) Prompt & Generate */}
+              <div className="space-y-2">
+                <Input
+                  placeholder="Describe your asset (e.g. 'red cap for pet')"
+                  value={prompt}
+                  onChange={e => setPrompt(e.target.value)}
+                />
+                <Button
+                  onClick={handleGenerate}
+                  disabled={loading || !prompt}
+                >
+                  Generate Preview
+                </Button>
               </div>
+
+              {/* 2) Preview + Metadata + Mint */}
+              {previewUrl && (
+                <div className="space-y-3">
+                  <img src={previewUrl} alt="Asset Preview" className="max-h-48 rounded" />
+                  <Input
+                    placeholder="Asset Name"
+                    value={metaName}
+                    onChange={e => setMetaName(e.target.value)}
+                  />
+                  <Input
+                    placeholder="Description"
+                    value={metaDescription}
+                    onChange={e => setMetaDescription(e.target.value)}
+                  />
+                  <Input
+                    placeholder="Attributes (JSON string)"
+                    value={metaAttributes}
+                    onChange={e => setMetaAttributes(e.target.value)}
+                  />
+                  <div className="flex space-x-2">
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder="action"
+                      value={actionValue}
+                      onChange={e => setActionValue(+e.target.value)}
+                    />
+                    <Input
+                      type="number"
+                      min={1}
+                      placeholder="frames"
+                      value={framesValue}
+                      onChange={e => setFramesValue(+e.target.value)}
+                    />
+                  </div>
+                  <Button
+                    onClick={handleMintAssetWithMeta}
+                    disabled={mintingAsset}
+                  >
+                    Mint Asset (10 pts)
+                  </Button>
+                </div>
+              )}
+
+              <hr />
+
+              {/* 3) Already‐minted Assets Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {assets.length > 0 ? (
+                  assets.map(asset => (
+                    <Card key={asset.id} className="p-2">
+                      <CardHeader>
+                        <h2 className="text-lg font-bold">{asset.name}</h2>
+                        <CardDescription>ID: {asset.id}</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        <img src={asset.url} alt={asset.name} className="max-h-32 rounded" />
+                        <p className="text-sm">{asset.description}</p>
+                        <Button
+                          size="sm"
+                          variant={selectedAsset === asset.id ? "default" : "outline"}
+                          onClick={() => setSelectedAsset(asset.id)}
+                        >
+                          {selectedAsset === asset.id ? "Selected" : "Select"}
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ))
+                ) : (
+                  <p>No assets yet. Mint one above!</p>
+                )}
+              </div>
+
+              {/* 4) Equip to Selected Pet */}
               {selectedPet && selectedAsset && (
                 <div className="flex items-center space-x-4">
                   <p>
-                    Equip Asset #{selectedAsset} to{" "}
-                    {pets.find(p=>p.id===selectedPet)?.name}
+                    Equip <strong>{assets.find(a => a.id === selectedAsset)?.name}</strong> to{" "}
+                    <strong>{pets.find(p => p.id === selectedPet)?.name}</strong>
                   </p>
                   <Button onClick={handleEquip} disabled={equipping}>
                     Equip
@@ -431,6 +545,7 @@ export default function HomePage() {
             </CardContent>
           </Card>
         )}
+
 
         {activeTab === "more" && (
           <Card>
