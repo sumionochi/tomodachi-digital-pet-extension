@@ -4,6 +4,8 @@
         "EASSET",
         "EPET",
         "EUSER",
+        "evented",
+        "fileify",
         "Ghibli",
         "Keypair",
         "keytool",

@@ -1,3 +1,4 @@
+//page.tsx
 "use client"
 
 import { useState, useEffect } from "react"
@@ -44,6 +45,15 @@ import {
 } from "@/components/ui/collapsible";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 const Bars3Icon = ({ size = 24 }) => (
   <svg
@@ -86,46 +96,50 @@ export default function HomePage() {
 
   const [prompt, setPrompt] = useState<string>('');
   const [generatedB64, setGeneratedB64] = useState<string | null>(null);
-  const [previewUrl, setPreviewUrl]     = useState<string | null>(null);
-  const [metaName, setMetaName]         = useState<string>('');
+  const [metaName, setMetaName] = useState<string>('');
   const [metaDescription, setMetaDescription] = useState<string>('');
-  const [metaAttributes, setMetaAttributes]   = useState<string>('');
-  const [actionValue, setActionValue]   = useState<number>(0);
-  const [framesValue, setFramesValue]   = useState<number>(1);
+  const [metaAttributes, setMetaAttributes] = useState<string>('');
+  const [actionValue, setActionValue] = useState<number>(0);
+  const [framesValue, setFramesValue] = useState<number>(1);
   const [introOpen, setIntroOpen] = useState(true);
+  const [generatedUrls, setGeneratedUrls] = useState<string[]>([])
 
   const [mode, setMode] = useState<"prompt" | "sketch">("prompt");
   const canvasRef = useRef<ReactSketchCanvasRef>(null);
 
-  const handleUploadBase64 = async (b64: string) => {
-    setLoading(true);
-    try {
-      const uploadRes = await fetch("/api/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ b64 }),
-      });
-      const { blobId } = await uploadRes.json();
-      setPreviewUrl(`${process.env.NEXT_PUBLIC_WALRUS_BASE_URL}/${blobId}`);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [sizeOption, setSizeOption] = useState<"1024x1024"|"1024x1536"|"1536x1024"|"auto">("1024x1024")
+  const [qualityOption, setQualityOption] = useState<"low"|"medium"|"high"|"auto">("auto")
+  const [backgroundOption, setBackgroundOption] = useState<"transparent"|"opaque">("transparent")
+  const [numImages, setNumImages] = useState(1)
+  const [moderationLevel, setModerationLevel] = useState<"auto"|"low">("auto")
+  const [previewUrl, setPreviewUrl]     = useState<string | null>(null);
 
-  const handleExportSketch = async () => {
-    if (!canvasRef.current) return;
-    try {
-      // returns data:image/png;base64,XXXX
-      const dataUrl = await canvasRef.current.exportImage("png");
-      const b64 = dataUrl.split(",")[1];        // strip prefix
-      setGeneratedB64(b64);
-      await handleUploadBase64(b64);
-    } catch (e) {
-      console.error("Sketch export failed:", e);
+  const [selectedPreviews, setSelectedPreviews] = useState<string[]>([]);
+  const [maskMode, setMaskMode] = useState(false);
+  const maskRef = useRef<ReactSketchCanvasRef>(null);
+  const [editPrompt, setEditPrompt] = useState<string>("");
+  const [imgSize, setImgSize] = useState<{ width: number; height: number }>(
+    sizeOption === "auto"
+      ? { width: 1024, height: 1024 }
+      : (() => {
+          const [w, h] = sizeOption.split("x").map(Number);
+          return { width: w, height: h };
+        })()
+  );
+
+  useEffect(() => {
+    if (maskMode) {
+      maskRef.current?.eraseMode(true);
     }
-  };
+  }, [maskMode]);
+  
+  useEffect(() => {
+    if (sizeOption === "auto") return;
+    const [w, h] = sizeOption.split("x").map(Number);
+    setImgSize({ width: w, height: h });
+  }, [sizeOption]);
+  
+  const queryClient = useQueryClient();
 
   const TABS: { key: Tab; label: string }[] = [
     { key: "home",  label: "Home" },
@@ -146,41 +160,147 @@ export default function HomePage() {
     }
   }, [address]);
 
-  // Add the missing onTabChange function
-  const onTabChange = (tab: Tab) => {
-    setActiveTab(tab);
-  };
+  // Get the previews from the query cache
+  const { data: previews = [] } = useQuery<string[]>({
+    queryKey: ["draft_previews"],
+    queryFn: () => [],
+    staleTime: Infinity,
+    enabled: true,
+  })
 
-  // Add the missing onCheckIn and onRegister functions
-  const onCheckIn = () => {
-    handleCheckIn();
-  };
+  // Generation mutation to add new previews
+  const generateMutation = useMutation<string[], Error, void>({
+    mutationFn: async () => {
+      const res = await fetch("/api/generatePetPreview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt,
+          size: sizeOption,
+          quality: qualityOption,
+          background: backgroundOption,
+          n: numImages,
+          moderation: moderationLevel,
+        }),
+      });
+      const { urls } = await res.json();
+      return urls;
+    },
+    onSuccess(newUrls) {
+      // always add to your draft cache
+      queryClient.setQueryData<string[]>(
+        ["draft_previews"],
+        (old = []) => [...old, ...newUrls]
+      );
+  
+      // **if there’s exactly one** result, auto-select it as your final preview
+      if (newUrls.length === 1) {
+        setPreviewUrl(newUrls[0]);       // show this straight away
+        setSelectedPreviews([]);         // clear any prior multi-select
+      }
+    },
+  });
 
-  const onRegister = () => {
-    handleRegister();
-  };
+  // Multi-image refine mutation
+  const refineMutation = useMutation<string, Error, { images: string[]; prompt: string }>(
+    {
+      mutationFn: async ({ images, prompt }) => {
+        if (images.length === 0) {
+          throw new Error("No previews selected");
+        }
+        const res = await fetch("/api/editPetPreview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            images,               // <-- array of preview URLs / base64 strings
+            prompt,               // refinement instructions
+            size: sizeOption,
+            quality: qualityOption,
+            background: backgroundOption,
+            moderation: moderationLevel,
+          }),
+        });
+        const { url } = await res.json();
+        return url;           // your combined/refined asset URL
+      },
+      onSuccess: (newUrl) => {
+        // Add the new combined asset to your cache
+        queryClient.setQueryData<string[]>(
+          ["draft_previews"],
+          (old = []) => [...old, newUrl]
+        );
+        // reset selection
+        setSelectedPreviews([]);
+        // optionally set this as your final preview
+        setSelectedPreviews([]);         // clear the array
+        setPreviewUrl(newUrl);           // save the combined result
+      },
+    }
+  );
 
-  const handleGenerate = async () => {
-    setLoading(true);
-    try {
-      // 1) Generate via GPT-Image-1
-      const genRes = await fetch(`/api/generate?prompt=${encodeURIComponent(prompt)}`);
-      const { b64 } = await genRes.json();
-      setGeneratedB64(b64);
-
-      // 2) Upload to Walrus
-      const uploadRes = await fetch(`/api/upload`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+  // Upload sketch mutation
+  const uploadSketchMutation = useMutation<string, Error, string>({
+    mutationFn: async (b64) => {
+      const uploadRes = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ b64 }),
       });
       const { blobId } = await uploadRes.json();
-      const url = `${process.env.NEXT_PUBLIC_WALRUS_BASE_URL}/${blobId}`;
-      setPreviewUrl(url);
+      return `${process.env.NEXT_PUBLIC_WALRUS_BASE_URL}/${blobId}`;
+    },
+    onSuccess(url) {
+      queryClient.setQueryData<string[]>(
+        ["draft_previews"],
+        (old = []) => [...old, url]
+      )
+      setSelectedPreviews([]);         // clear any multi-selection
+      setPreviewUrl(url);              // record this single preview
+    },
+  })
+
+  // Mint mutation - clears all previews after minting
+  const mintMutation = useMutation<void, Error, void>({
+    mutationFn: async () => {
+      if (!address || !previewUrl) return;
+      await mintAsset(
+        address,
+        suiClient,
+        signAndExecute,
+        actionValue,
+        framesValue,
+        previewUrl,
+        metaName,
+        metaDescription,
+        metaAttributes,
+      );
+      await refreshAssets();
+      // reset form state
+      setPrompt('');
+      setGeneratedB64(null);
+      setSelectedPreviews([]);
+      setPreviewUrl(null);
+      setMetaName('');
+      setMetaDescription('');
+      setMetaAttributes('');
+      setActionValue(0);
+      setFramesValue(1);
+    },
+    onSuccess() {
+      queryClient.setQueryData<string[]>(["draft_previews"], [])
+    },
+  })
+
+  // Handlers
+  const handleExportSketch = async () => {
+    if (!canvasRef.current) return;
+    try {
+      const dataUrl = await canvasRef.current.exportImage("png");
+      const b64 = dataUrl.split(",")[1];
+      setGeneratedB64(b64);
+      uploadSketchMutation.mutate(b64);
     } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
+      console.error("Sketch export failed:", e);
     }
   };
 
@@ -191,6 +311,7 @@ export default function HomePage() {
     await refreshScore()
     setLoading(false)
   }
+
   const handleCheckIn = async () => {
     if (!address) return
     setLoading(true)
@@ -198,6 +319,7 @@ export default function HomePage() {
     await refreshScore()
     setLoading(false)
   }
+
   const handleCreatePet = async () => {
     if (!address || !petName) return
     setLoading(true)
@@ -206,6 +328,23 @@ export default function HomePage() {
     await refreshPets()
     setLoading(false)
   }
+
+  const handleEquip = async () => {
+    if (!address || !selectedPet || !selectedAsset) return
+    setEquipping(true)
+    await equipAsset(address, suiClient, signAndExecute, selectedPet, selectedAsset)
+    await refreshEquipped()
+    setEquipping(false)
+  }
+
+  const handleUnequip = async (petId: string, assetId: string) => {
+    if (!address) return
+    setEquipping(true)
+    await unequipAsset(address, suiClient, signAndExecute, petId, assetId)
+    await refreshEquipped()
+    setEquipping(false)
+  }
+
   const handleMintAssetWithMeta = async () => {
     if (!address || !previewUrl) return;
     setMintingAsset(true);
@@ -232,21 +371,6 @@ export default function HomePage() {
     setFramesValue(1);
     setMintingAsset(false);
   };
-  const handleEquip = async () => {
-    if (!address || !selectedPet || !selectedAsset) return
-    setEquipping(true)
-    await equipAsset(address, suiClient, signAndExecute, selectedPet, selectedAsset)
-    await refreshEquipped()
-    setEquipping(false)
-  }
-
-  const handleUnequip = async (petId: string, assetId: string) => {
-    if (!address) return
-    setEquipping(true)
-    await unequipAsset(address, suiClient, signAndExecute, petId, assetId)
-    await refreshEquipped()
-    setEquipping(false)
-  }
 
   const handleAdminReset = async () => {
     if (!address || !adminUser) return
@@ -275,6 +399,14 @@ export default function HomePage() {
     )
   }
 
+  function resolveSize(sizeOption: string) {
+    if (sizeOption === "auto") {
+      return { width: 1024, height: 1024 };
+    }
+    const [w, h] = sizeOption.split("x").map(Number);
+    return { width: w, height: h };
+  }
+
   // Authenticated dashboard
   return (
     <div className="bg-background text-foreground min-h-screen flex flex-col">
@@ -289,7 +421,7 @@ export default function HomePage() {
             {TABS.map(({ key, label }) => (
               <Button
                 key={key}
-                onClick={() => onTabChange(key)}
+                onClick={() => setActiveTab(key)}
                 className={cn(
                   "px-3 py-1 rounded-md font-medium border cursor-pointer",
                   activeTab === key
@@ -314,7 +446,7 @@ export default function HomePage() {
                 <Button
                   key={key}
                   onClick={() => {
-                    onTabChange(key)
+                    setActiveTab(key)
                   }}
                   className={cn(
                     "w-full text-left px-2 py-1 rounded-md font-medium border cursor-pointer",
@@ -341,7 +473,7 @@ export default function HomePage() {
             {isRegistered ? (
               <Button
                 size="default"
-                onClick={onCheckIn}
+                onClick={handleCheckIn}
                 disabled={loading}
                 className="cursor-pointer"
               >
@@ -350,7 +482,7 @@ export default function HomePage() {
             ) : (
               <Button
                 size="default"
-                onClick={onRegister}
+                onClick={handleRegister}
                 disabled={loading}
                 className="cursor-pointer"
               >
@@ -376,7 +508,7 @@ export default function HomePage() {
           {isRegistered ? (
             <Button
               size="sm"
-              onClick={onCheckIn}
+              onClick={handleCheckIn}
               disabled={loading}
             >
               Daily Check-In
@@ -384,7 +516,7 @@ export default function HomePage() {
           ) : (
             <Button
               size="sm"
-              onClick={onRegister}
+              onClick={handleRegister}
               disabled={loading}
             >
               Register
@@ -395,137 +527,350 @@ export default function HomePage() {
 
       {/* Content */}
       <main className="container mx-auto max-w-6xl p-4 mt-4 flex-1 space-y-8">
-      {activeTab === "home" && (
-        <div>
-          <Collapsible open={introOpen} onOpenChange={setIntroOpen}>
-            <CollapsibleTrigger asChild>
-              <Card className="cursor-pointer flex flex-row justify-between items-center">
-                <CardHeader className="w-full">
-                  <h1 className="text-2xl font-bold">
-                    Welcome to Tomodachi Pets : a Digital Pet Game
-                  </h1>
-                  <CardDescription>
-                    Your AI-powered, on-chain virtual pet playground
-                  </CardDescription>
-                </CardHeader>
-                <div className="pr-4">
-                  {introOpen ? (
-                    <ChevronDown size={24} />
-                  ) : (
-                    <ChevronRight size={24} />
-                  )}
-                </div>
-              </Card>
-            </CollapsibleTrigger>
+        {activeTab === "home" && (
+          <div>
+            <Collapsible open={introOpen} onOpenChange={setIntroOpen}>
+              <CollapsibleTrigger asChild>
+                <Card className="cursor-pointer flex flex-row justify-between items-center">
+                  <CardHeader className="w-full">
+                    <h1 className="text-2xl font-bold">
+                      Welcome to Tomodachi Pets : a Digital Pet Game
+                    </h1>
+                    <CardDescription>
+                      Your AI-powered, on-chain virtual pet playground
+                    </CardDescription>
+                  </CardHeader>
+                  <div className="pr-4">
+                    {introOpen ? (
+                      <ChevronDown size={24} />
+                    ) : (
+                      <ChevronRight size={24} />
+                    )}
+                  </div>
+                </Card>
+              </CollapsibleTrigger>
 
-            <AnimatePresence initial={false}>
-              {introOpen && (
-                <motion.div
-                  key="intro"
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.3, ease: "easeInOut" }}
-                >
-                  <CollapsibleContent forceMount>
-                    <Card className="mt-4">
-                      <CardContent>
-                        <p className="mb-4">
-                          Tomodachi Pets lets you <strong>draw or prompt</strong> custom pet accessories, mint them as NFTs on Sui,
-                          and <strong>dynamically bundle</strong> them into your pet to watch it come to life.
-                        </p>
+              <AnimatePresence initial={false}>
+                {introOpen && (
+                  <motion.div
+                    key="intro"
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.3, ease: "easeInOut" }}
+                  >
+                    <CollapsibleContent forceMount>
+                      <Card className="mt-4">
+                        <CardContent>
+                          <p className="mb-4">
+                            Tomodachi Pets lets you <strong>draw or prompt</strong> custom pet accessories, mint them as NFTs on Sui,
+                            and <strong>dynamically bundle</strong> them into your pet to watch it come to life.
+                          </p>
 
-                        <h3 className="text-lg font-medium mb-2">How It Works</h3>
-                        <ol className="list-decimal list-inside space-y-2 mb-4">
-                          <li>
-                            <strong>Sketch or Type</strong> — give us a prompt (e.g. "ghibli fluffy cat")
-                          </li>
-                          <li>
-                            <strong>AI-Gen Service</strong> calls GPT-Image-1 → returns a transparent PNG
-                          </li>
-                          <li>
-                            <strong>Walrus Storage</strong> stores your image and returns a URL
-                          </li>
-                          <li>
-                            <strong>Mint Accessory</strong> — spend 10 points to mint that URL as an Asset NFT
-                          </li>
-                          <li>
-                            <strong>Create & Customize Pet</strong> — mint a named Pet NFT, then equip/unequip your accessories via dynamic fields
-                          </li>
-                        </ol>
+                          <h3 className="text-lg font-medium mb-2">How It Works</h3>
+                          <ol className="list-decimal list-inside space-y-2 mb-4">
+                            <li>
+                              <strong>Sketch or Type</strong> — give us a prompt (e.g. "ghibli fluffy cat")
+                            </li>
+                            <li>
+                              <strong>AI-Gen Service</strong> calls GPT-Image-1 → returns a transparent PNG
+                            </li>
+                            <li>
+                              <strong>Walrus Storage</strong> stores your image and returns a URL
+                            </li>
+                            <li>
+                              <strong>Mint Accessory</strong> — spend 10 points to mint that URL as an Asset NFT
+                            </li>
+                            <li>
+                              <strong>Create & Customize Pet</strong> — mint a named Pet NFT, then equip/unequip your accessories via dynamic fields
+                            </li>
+                          </ol>
 
-                        <h3 className="text-lg font-medium mb-2">Game Loop & Rewards</h3>
-                        <ul className="list-disc list-inside space-y-2">
-                          <li>📅 <strong>Daily Check-In:</strong> earn 2 points every day</li>
-                          <li>🏆 <strong>Spend Points:</strong> mint unique accessories (10 pts each)</li>
-                          <li>🎨 <strong>Express Yourself:</strong> build a one-of-a-kind pet with your own designs</li>
-                          <li>🔄 <strong>Composable NFTs:</strong> equip, unequip, or swap assets anytime</li>
-                        </ul>
+                          <h3 className="text-lg font-medium mb-2">Game Loop & Rewards</h3>
+                          <ul className="list-disc list-inside space-y-2">
+                            <li>📅 <strong>Daily Check-In:</strong> earn 2 points every day</li>
+                            <li>🏆 <strong>Spend Points:</strong> mint unique accessories (10 pts each)</li>
+                            <li>🎨 <strong>Express Yourself:</strong> build a one-of-a-kind pet with your own designs</li>
+                            <li>🔄 <strong>Composable NFTs:</strong> equip, unequip, or swap assets anytime</li>
+                          </ul>
 
-                        <p className="mt-4 text-sm text-muted-foreground">
-                          All images and metadata live on-chain and in Walrus, giving you full ownership and on-the-fly composability.
-                        </p>
-                      </CardContent>
-                    </Card>
-                  </CollapsibleContent>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </Collapsible>
+                          <p className="mt-4 text-sm text-muted-foreground">
+                            All images and metadata live on-chain and in Walrus, giving you full ownership and on-the-fly composability.
+                          </p>
+                        </CardContent>
+                      </Card>
+                    </CollapsibleContent>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </Collapsible>
 
-          {/* Prompt/Sketch Mode Toggle */}
-          <div className="flex space-x-2 mt-6 mb-4">
-            <Button
-              variant={mode === "prompt" ? "default" : "outline"}
-              onClick={() => setMode("prompt")}
-            >
-              Prompt
-            </Button>
-            <Button
-              variant={mode === "sketch" ? "default" : "outline"}
-              onClick={() => setMode("sketch")}
-            >
-              Sketch
-            </Button>
-          </div>
-
-          {/* Prompt Mode UI */}
-          {mode === "prompt" && (
-            <div className="space-y-2">
-              <Input
-                placeholder="Describe your asset"
-                value={prompt}
-                onChange={e => setPrompt(e.target.value)}
-              />
-              <Button onClick={handleGenerate} disabled={loading || !prompt}>
-                Generate Preview
-              </Button>
-            </div>
-          )}
-
-          {/* Sketch Mode UI */}
-          {mode === "sketch" && (
-            <div className="space-y-2 w-full">
-              <ReactSketchCanvas
-                ref={canvasRef}
-                width="512px"
-                height="512px"
-                strokeWidth={4}
-                className="border rounded"
-              />
+            {/* ── 1) Prompt/Sketch & Submit ── */}
+            <div className="space-y-4 mt-8">
+              <h1 className="text-2xl font-bold">Create your Ideal Pet Companion/Tomodachi</h1>
+              {/* Mode Toggle */}
               <div className="flex space-x-2">
-                <Button onClick={handleExportSketch} disabled={loading}>
-                  Export Sketch
+                <Button
+                  variant={mode === "prompt" ? "default" : "outline"}
+                  onClick={() => setMode("prompt")}
+                >
+                  Prompt
                 </Button>
-                <Button onClick={() => canvasRef.current?.clearCanvas()}>
-                  Clear
+                <Button
+                  variant={mode === "sketch" ? "default" : "outline"}
+                  onClick={() => setMode("sketch")}
+                >
+                  Sketch
                 </Button>
               </div>
+
+              {/* Prompt Input or Sketch Canvas */}
+              {mode === "prompt" ? (
+                <Input
+                  placeholder="Describe your asset"
+                  value={prompt}
+                  onChange={e => setPrompt(e.target.value)}
+                />
+              ) : (
+                <ReactSketchCanvas
+                  ref={canvasRef}
+                  width="512px"
+                  height="512px"
+                  strokeWidth={4}
+                  className="border rounded"
+                />
+              )}
+
+              {/* Submit Button */}
+              <Button
+                onClick={mode === "prompt" ? () => generateMutation.mutate() : handleExportSketch}
+                disabled={generateMutation.isPending || uploadSketchMutation.isPending || (mode === "prompt" && !prompt)}
+              >
+                {mode === "prompt" ? 
+                  (generateMutation.isPending ? "Generating..." : "Generate Preview") : 
+                  (uploadSketchMutation.isPending ? "Uploading..." : "Submit Sketch")}
+              </Button>
             </div>
-          )}
-        </div>
-      )}
- 
+
+            {/* ── 2) GPT-Image-1 Options & Previews ── */}
+            <div className="space-y-4 mt-8">
+              <h1 className="text-2xl font-bold">Preview Settings</h1>
+              {/* Options Selectors */}
+              <div className="flex flex-col md:flex-row gap-4">
+                <div>
+                  <Label className="mb-1" htmlFor="size-select">Size</Label>
+                  <Select
+                    value={sizeOption}
+                    onValueChange={v =>
+                      setSizeOption(v as "1024x1024" | "1024x1536" | "1536x1024" | "auto")
+                    }
+                  >
+                    <SelectTrigger id="size-select">
+                      <SelectValue placeholder="Size" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1024x1024">1024×1024</SelectItem>
+                      <SelectItem value="1024x1536">1024×1536</SelectItem>
+                      <SelectItem value="1536x1024">1536×1024</SelectItem>
+                      <SelectItem value="auto">auto</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="mb-1" htmlFor="quality-select">Quality</Label>
+                  <Select
+                    value={qualityOption}
+                    onValueChange={v =>
+                      setQualityOption(v as "low" | "medium" | "high" | "auto")
+                    }
+                  >
+                    <SelectTrigger id="quality-select">
+                      <SelectValue placeholder="Quality" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">low</SelectItem>
+                      <SelectItem value="medium">medium</SelectItem>
+                      <SelectItem value="high">high</SelectItem>
+                      <SelectItem value="auto">auto</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="mb-1" htmlFor="background-select">Background</Label>
+                  <Select
+                    value={backgroundOption}
+                    onValueChange={v =>
+                      setBackgroundOption(v as "transparent" | "opaque")
+                    }
+                  >
+                    <SelectTrigger id="background-select">
+                      <SelectValue placeholder="Background" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="transparent">transparent</SelectItem>
+                      <SelectItem value="opaque">opaque</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="mb-1" htmlFor="count-input">Quantity</Label>
+                  <Input
+                    id="count-input"
+                    type="number"
+                    min={1}
+                    max={4}
+                    value={numImages}
+                    onChange={e => setNumImages(+e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label className="mb-1" htmlFor="moderation-select">Moderation</Label>
+                  <Select
+                    value={moderationLevel}
+                    onValueChange={v => setModerationLevel(v as "auto" | "low")}
+                  >
+                    <SelectTrigger id="moderation-select">
+                      <SelectValue placeholder="Moderation" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">auto</SelectItem>
+                      <SelectItem value="low">low</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+            
+            {/* ── 2) GPT-Image-1 Previews & Minting ── */}
+            <div className="space-y-4 mt-8">
+              {/* Grid of all previews */}
+              {previews.filter(Boolean).length > 0 && (
+                <div className="flex flex-col space-y-4">
+                  <h1 className="text-2xl font-bold">Previews</h1>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                  {previews
+                    .filter((url) => typeof url === "string" && url.length > 0)
+                    .map((url, idx) => {
+                    const refining = selectedPreviews.includes(url)
+                    const isFinal  = previewUrl === url
+
+                    return (
+                      <div key={idx} className="relative group">
+                        <img
+                          src={url}
+                          alt={`Preview ${idx + 1}`}
+                          className={`w-full h-auto rounded border transition ${
+                            isFinal  ? "ring-2 ring-primary" : ""
+                          }`}
+                        />
+
+                        {/* overlay buttons on hover */}
+                        <div className="absolute inset-0 bg-black bg-opacity-25 opacity-0 group-hover:opacity-100 flex flex-col justify-center items-center space-y-2">
+                          <Button
+                            size="sm"
+                            onClick={() =>
+                              setSelectedPreviews(prev =>
+                                refining
+                                  ? prev.filter(u => u !== url)
+                                  : [...prev, url]
+                              )
+                            }
+                          >
+                            {refining ? "Unselect refine" : "Select refine"}
+                          </Button>
+
+                          <Button
+                            size="sm"
+                            onClick={() =>
+                              setPreviewUrl(prev => (prev === url ? null : url))
+                            }
+                          >
+                            {isFinal ? "Unselect final" : "Select final"}
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  </div>
+                </div>
+              )}
+
+              {/* Refinement UI */}
+              {selectedPreviews.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <Input
+                    placeholder="Refinement instructions"
+                    value={editPrompt}
+                    onChange={e => setEditPrompt(e.target.value)}
+                  />
+                  <Button
+                    onClick={() =>
+                      refineMutation.mutate({ images: selectedPreviews, prompt: editPrompt })
+                    }
+                    disabled={!editPrompt || refineMutation.status === "pending"}
+                    className="mt-2"
+                  >
+                    {refineMutation.status === "pending" ? "Refining…" : `Apply Refine for ${selectedPreviews.length}`}
+                  </Button>
+                </div>
+              )}
+
+              {/* Final Mint Form */}
+              {previewUrl && (
+                <Card className="mt-6">
+                  <CardHeader>
+                    <CardTitle>Final Preview & Mint</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <img
+                      src={previewUrl}
+                      alt="Selected Preview"
+                      className="w-full h-auto rounded border"
+                    />
+                    <Input
+                      placeholder="Asset Name"
+                      value={metaName}
+                      onChange={e => setMetaName(e.target.value)}
+                    />
+                    <Input
+                      placeholder="Description"
+                      value={metaDescription}
+                      onChange={e => setMetaDescription(e.target.value)}
+                    />
+                    <Input
+                      placeholder="Attributes (JSON)"
+                      value={metaAttributes}
+                      onChange={e => setMetaAttributes(e.target.value)}
+                    />
+                    <div className="flex space-x-2">
+                      <Input
+                        type="number"
+                        min={0}
+                        placeholder="action"
+                        value={actionValue}
+                        onChange={e => setActionValue(+e.target.value)}
+                      />
+                      <Input
+                        type="number"
+                        min={1}
+                        placeholder="frames"
+                        value={framesValue}
+                        onChange={e => setFramesValue(+e.target.value)}
+                      />
+                    </div>
+                    <Button
+                      onClick={() => mintMutation.mutate()}
+                      disabled={mintMutation.status === "pending" || !metaName}
+                      className="w-full"
+                    >
+                      {mintMutation.status === "pending" ? "Minting…" : "Mint Asset (10 pts)"}
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </div>
+        )}
 
         {activeTab === "pets" && (
           <Card>
@@ -587,20 +932,6 @@ export default function HomePage() {
               <h1 className="text-2xl font-bold">Your Assets</h1>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* 1) Prompt & Generate */}
-              <div className="space-y-2">
-                <Input
-                  placeholder="Describe your asset (e.g. 'red cap for pet')"
-                  value={prompt}
-                  onChange={e => setPrompt(e.target.value)}
-                />
-                <Button
-                  onClick={handleGenerate}
-                  disabled={loading || !prompt}
-                >
-                  Generate Preview
-                </Button>
-              </div>
 
               {/* 2) Preview + Metadata + Mint */}
               {previewUrl && (
@@ -690,7 +1021,6 @@ export default function HomePage() {
             </CardContent>
           </Card>
         )}
-
 
         {activeTab === "more" && (
           <Card>
