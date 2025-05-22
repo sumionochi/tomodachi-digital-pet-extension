@@ -3,7 +3,7 @@ module tomodachiaddress::game {
     use sui::dynamic_object_field as dof;
     use sui::table::{Self, Table};
     use sui::event;
-
+    use sui::clock::{Self as clock, Clock};
     // === ERROR CODES & PRICING ===
     const EAlreadyRegistered: u64 = 0;
     const ENotRegistered:     u64 = 1;
@@ -63,6 +63,12 @@ module tomodachiaddress::game {
         asset_id: ID,
     }
 
+    public struct LastCheckIn has key, store {
+        id: UID,
+        last_check_in: Table<address, u64>, // maps address → unix timestamp (seconds)
+    }
+
+
     // === INIT ===
     fun init(ctx: &mut TxContext) {
         internal_setup(ctx);
@@ -71,6 +77,12 @@ module tomodachiaddress::game {
     fun internal_setup(ctx: &mut TxContext) {
         let admin = AdminCap { id: object::new(ctx) };
         let mintcap = UserMintCap { id: object::new(ctx) };
+        let last_check_in = LastCheckIn {
+            id: object::new(ctx),
+            last_check_in: table::new<address, u64>(ctx),
+        };
+        transfer::share_object(last_check_in);
+
 
         let scores = ScoreBoard {
             id: object::new(ctx),
@@ -105,16 +117,40 @@ module tomodachiaddress::game {
         let sender = tx_context::sender(ctx);
         let already_exists = table::contains(&scores.scores, sender);
         assert!(!already_exists, EAlreadyRegistered);
-        table::add(&mut scores.scores, sender, 0);
+        table::add(&mut scores.scores, sender, 10);
     }
 
     // === DAILY CHECK-IN ===
-    public entry fun check_in(scores: &mut ScoreBoard, ctx: &mut TxContext) {
+    public entry fun check_in(
+        scores: &mut ScoreBoard,
+        last_check_in: &mut LastCheckIn,
+        clock: &Clock, // <-- Add this parameter
+        ctx: &mut TxContext
+    ) {
         let sender = tx_context::sender(ctx);
         assert!(table::contains(&scores.scores, sender), ENotRegistered);
+
+        // Get current timestamp (seconds since epoch)
+        let now_ms = clock::timestamp_ms(clock); // returns u64 (milliseconds)
+        let now = now_ms / 1000; // convert to seconds
+
+        // Check last check-in
+        let can_check_in = if (table::contains(&last_check_in.last_check_in, sender)) {
+            let last = *table::borrow(&last_check_in.last_check_in, sender);
+            now >= last + 86400 // 86400 seconds = 24 hours
+        } else {
+            true
+        };
+        assert!(can_check_in, /* your custom error code, e.g. ECheckInTooSoon */ 8);
+
+        // Update score
         let score_ref = table::borrow_mut(&mut scores.scores, sender);
         *score_ref = *score_ref + 2;
+
+        // Update last check-in time
+        table::add(&mut last_check_in.last_check_in, sender, now);
     }
+
 
     // === MINT ASSET (multiple assets per user, richer metadata) ===
     public entry fun mint_asset(

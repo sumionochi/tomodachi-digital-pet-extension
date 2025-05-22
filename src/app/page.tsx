@@ -54,6 +54,7 @@ import {
   SelectItem,
 } from "@/components/ui/select"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Textarea } from "@/components/ui/textarea"
 
 const Bars3Icon = ({ size = 24 }) => (
   <svg
@@ -305,20 +306,52 @@ export default function HomePage() {
   };
 
   const handleRegister = async () => {
-    if (!address) return
-    setLoading(true)
-    await createUser(address, suiClient, signAndExecute)
-    await refreshScore()
-    setLoading(false)
-  }
+    console.log("Registering user..." + address);
+    if (!address) {
+      console.log("Registering user to check if null..." + address);
+      return;
+    };
+    setLoading(true);
+    console.log("Loading set to begin");
+    try {
+      console.log("Registering user..." + address);
+      await createUser(address, suiClient, signAndExecute);
+      console.log("Registered the user..." + isRegistered);
+      await refreshScore();
+      console.log("Completed with refreshed score..." + score);
+    } catch (error: unknown) {
+      console.error("Register error:", error);
+      if (error instanceof Error) {
+        alert("Registration failed: " + error.message);
+      } else {
+        alert("Registration failed: " + String(error));
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleCheckIn = async () => {
-    if (!address) return
-    setLoading(true)
-    await checkIn(address, suiClient, signAndExecute)
-    await refreshScore()
-    setLoading(false)
-  }
+    if (!address) return;
+    setLoading(true);
+    try {
+      await checkIn(address, suiClient, (args: any, opts: any) => signAndExecute(
+        args,
+        {
+          ...opts,
+          onSuccess: async (result: any) => {
+            await refreshScore(); // Only refresh after success!
+            if (opts?.onSuccess) opts.onSuccess(result);
+          },
+          onError: opts?.onError,
+        }
+      ));
+    } finally {
+      refreshScore(); //the refresh function is called here to update the score properly
+      setLoading(false);
+    }
+  };
+  
 
   const handleCreatePet = async () => {
     if (!address || !petName) return
@@ -397,14 +430,6 @@ export default function HomePage() {
         </Card>
       </main>
     )
-  }
-
-  function resolveSize(sizeOption: string) {
-    if (sizeOption === "auto") {
-      return { width: 1024, height: 1024 };
-    }
-    const [w, h] = sizeOption.split("x").map(Number);
-    return { width: w, height: h };
   }
 
   // Authenticated dashboard
@@ -797,7 +822,7 @@ export default function HomePage() {
 
               {/* Refinement UI */}
               {selectedPreviews.length > 0 && (
-                <div className="mt-4 space-y-2">
+                <div className="mt-4 mb-4 space-y-2">
                   <Input
                     placeholder="Refinement instructions"
                     value={editPrompt}
@@ -817,56 +842,70 @@ export default function HomePage() {
 
               {/* Final Mint Form */}
               {previewUrl && (
-                <Card className="mt-6">
-                  <CardHeader>
-                    <CardTitle>Final Preview & Mint</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <img
-                      src={previewUrl}
-                      alt="Selected Preview"
-                      className="w-full h-auto rounded border"
-                    />
-                    <Input
-                      placeholder="Asset Name"
-                      value={metaName}
-                      onChange={e => setMetaName(e.target.value)}
-                    />
-                    <Input
-                      placeholder="Description"
-                      value={metaDescription}
-                      onChange={e => setMetaDescription(e.target.value)}
-                    />
-                    <Input
-                      placeholder="Attributes (JSON)"
-                      value={metaAttributes}
-                      onChange={e => setMetaAttributes(e.target.value)}
-                    />
-                    <div className="flex space-x-2">
-                      <Input
-                        type="number"
-                        min={0}
-                        placeholder="action"
-                        value={actionValue}
-                        onChange={e => setActionValue(+e.target.value)}
-                      />
-                      <Input
-                        type="number"
-                        min={1}
-                        placeholder="frames"
-                        value={framesValue}
-                        onChange={e => setFramesValue(+e.target.value)}
-                      />
-                    </div>
-                    <Button
-                      onClick={() => mintMutation.mutate()}
-                      disabled={mintMutation.status === "pending" || !metaName}
-                      className="w-full"
-                    >
-                      {mintMutation.status === "pending" ? "Minting…" : "Mint Asset (10 pts)"}
-                    </Button>
-                  </CardContent>
-                </Card>
+                <div className="w-full mx-auto">
+                  <h1 className="text-2xl text-start font-bold">Final Preview & Mint</h1>
+                  <Card className="mt-4 w-full max-w-sm rounded-md">
+                    <CardContent className="space-y-4">
+                      <div className="w-full">
+                        <img
+                          src={previewUrl}
+                          alt="Selected Preview"
+                          className="w-full h-auto rounded border"
+                        />
+                      </div>
+
+                      <div className="space-y-4">
+                        <Input
+                          placeholder="Asset Name"
+                          value={metaName}
+                          onChange={e => setMetaName(e.target.value)}
+                        />
+                        <Input
+                          placeholder="Description"
+                          value={metaDescription}
+                          onChange={e => setMetaDescription(e.target.value)}
+                        />
+                        <Label className="block text-sm font-medium text-muted-foreground">
+                          Attributes (JSON)
+                        </Label>
+                        <Textarea
+                          value={metaAttributes}
+                          onChange={e => setMetaAttributes(e.target.value)}
+                          className="w-full h-24 p-2 font-mono border rounded resize-y focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row sm:space-x-2 space-y-2 sm:space-y-0">
+                        <Input
+                          type="number"
+                          min={0}
+                          placeholder="action"
+                          value={actionValue}
+                          onChange={e => setActionValue(+e.target.value)}
+                          className="flex-1"
+                        />
+                        <Input
+                          type="number"
+                          min={1}
+                          placeholder="frames"
+                          value={framesValue}
+                          onChange={e => setFramesValue(+e.target.value)}
+                          className="flex-1"
+                        />
+                      </div>
+
+                      <Button
+                        onClick={() => mintMutation.mutate()}
+                        disabled={mintMutation.status === "pending" || !metaName}
+                        className="w-full cursor-pointer"
+                      >
+                        {mintMutation.status === "pending"
+                          ? "Minting…"
+                          : "Mint Asset (10 pts)"}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </div>
               )}
             </div>
           </div>

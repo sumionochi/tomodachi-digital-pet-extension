@@ -3,7 +3,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useSuiClient } from '@mysten/dapp-kit';
+import { useSuiClient } from "@mysten/dapp-kit";
 import { PACKAGE_ID, SCOREBOARD_ID } from "@/lib/sui";
 
 // Types
@@ -24,44 +24,77 @@ const PET_TYPE = `${PACKAGE_ID}::game::Pet`;
 const ASSET_TYPE = `${PACKAGE_ID}::game::Asset`;
 const ADMIN_CAP_TYPE = `${PACKAGE_ID}::game::AdminCap`;
 
-// Fetch user's score from ScoreBoard shared object
-async function fetchScore(address: string, suiClient: any): Promise<number | null> {
+async function fetchScore(
+  address: string,
+  suiClient: any
+): Promise<number | null> {
   try {
+    console.log("[fetchScore] Fetching ScoreBoard object:", SCOREBOARD_ID);
     const scoreboard = await suiClient.getObject({
       id: SCOREBOARD_ID,
       options: { showContent: true },
     });
+    console.log("[fetchScore] ScoreBoard object response:", scoreboard);
+
     const fields = scoreboard.data?.content?.fields;
-    if (!fields) return null;
-    // scores is a Table<address, u64>
+    if (!fields) {
+      console.warn("[fetchScore] No fields in ScoreBoard object");
+      return null;
+    }
     const scoresTableId = fields.scores.fields.id.id;
-    // Query the table for this address
-    const { value } = await suiClient.getDynamicFieldObject({
+    console.log("[fetchScore] Scores table ID:", scoresTableId);
+
+    const res = await suiClient.getDynamicFieldObject({
       parentId: scoresTableId,
       name: { type: "address", value: address },
     });
-    return value?.data?.content?.fields?.value ?? null;
-  } catch {
+    console.log("[fetchScore] getDynamicFieldObject response:", res);
+
+    const value = res.data?.content?.fields?.value;
+    console.log("[fetchScore] Extracted score value:", value);
+
+    return value ?? null;
+  } catch (err) {
+    console.error("[fetchScore] Error:", err);
     return null;
   }
 }
 
-// Check if user is registered (score entry exists)
-async function fetchIsRegistered(address: string, suiClient: any): Promise<boolean> {
+async function fetchIsRegistered(
+  address: string,
+  suiClient: any
+): Promise<boolean> {
   try {
+    console.log(
+      "[fetchIsRegistered] Fetching ScoreBoard object:",
+      SCOREBOARD_ID
+    );
     const scoreboard = await suiClient.getObject({
       id: SCOREBOARD_ID,
       options: { showContent: true },
     });
+    console.log("[fetchIsRegistered] ScoreBoard object response:", scoreboard);
+
     const fields = scoreboard.data?.content?.fields;
-    if (!fields) return false;
+    if (!fields) {
+      console.warn("[fetchIsRegistered] No fields in ScoreBoard object");
+      return false;
+    }
     const scoresTableId = fields.scores.fields.id.id;
+    console.log("[fetchIsRegistered] Scores table ID:", scoresTableId);
+
     const obj = await suiClient.getDynamicFieldObject({
       parentId: scoresTableId,
       name: { type: "address", value: address },
     });
-    return !!obj.value?.data?.content?.fields?.value;
-  } catch {
+    console.log("[fetchIsRegistered] getDynamicFieldObject response:", obj);
+
+    const isRegistered = !!obj.data?.content?.fields?.value;
+    console.log("[fetchIsRegistered] isRegistered:", isRegistered);
+
+    return isRegistered;
+  } catch (err) {
+    console.error("[fetchIsRegistered] Error:", err);
     return false;
   }
 }
@@ -84,7 +117,6 @@ async function fetchPets(address: string, suiClient: any): Promise<Pet[]> {
 }
 
 // Fetch user's assets
-
 async function fetchAssets(address: string, suiClient: any): Promise<Asset[]> {
   const { data } = await suiClient.getOwnedObjects({
     owner: address,
@@ -105,7 +137,10 @@ async function fetchAssets(address: string, suiClient: any): Promise<Asset[]> {
 }
 
 // Fetch equipped assets mapping (petId -> assetId)
-async function fetchEquippedAssets(address: string, suiClient: any): Promise<EquippedAssets> {
+async function fetchEquippedAssets(
+  address: string,
+  suiClient: any
+): Promise<EquippedAssets> {
   // For each pet, check dynamic fields for attached Asset
   const pets = await fetchPets(address, suiClient);
   const equipped: EquippedAssets = {};
@@ -146,9 +181,19 @@ export function useScoreboard(address?: string | null) {
   const [isRegistered, setIsRegistered] = useState(false);
 
   const refresh = useCallback(async () => {
-    if (!address) return;
-    setScore(await fetchScore(address, suiClient));
-    setIsRegistered(await fetchIsRegistered(address, suiClient));
+    if (!address) {
+      console.warn("[useScoreboard] No address provided");
+      return;
+    }
+    console.log("[useScoreboard] Refreshing for address:", address);
+
+    const scoreValue = await fetchScore(address, suiClient);
+    setScore(scoreValue);
+    console.log("[useScoreboard] Score set to:", scoreValue);
+
+    const registered = await fetchIsRegistered(address, suiClient);
+    setIsRegistered(registered);
+    console.log("[useScoreboard] isRegistered set to:", registered);
   }, [address, suiClient]);
 
   useEffect(() => {

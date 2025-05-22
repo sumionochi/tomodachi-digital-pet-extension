@@ -1,19 +1,27 @@
 // lib/sui.ts
 
-import { Transaction } from '@mysten/sui/transactions';
-import { SuiClient } from '@mysten/sui/client';
+import { Transaction } from "@mysten/sui/transactions";
+import { SuiClient } from "@mysten/sui/client";
 
 // ==== CONFIGURATION ====
-export const PACKAGE_ID           = process.env.NEXT_PUBLIC_PACKAGE_ID!;
-export const MODULE               = 'game';
-export const SCOREBOARD_ID        = process.env.NEXT_PUBLIC_SCOREBOARD_ID!;
-export const MINT_RECORD_ID       = process.env.NEXT_PUBLIC_MINT_RECORD_ID!;
-export const PET_NAMES_ID         = process.env.NEXT_PUBLIC_PET_NAMES_ID!;
-export const EQUIPPED_ASSETS_ID   = process.env.NEXT_PUBLIC_EQUIPPED_ASSETS_ID!;
+export const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID!;
+export const MODULE = "game";
+export const SCOREBOARD_ID = process.env.NEXT_PUBLIC_SCOREBOARD_ID!;
+export const MINT_RECORD_ID = process.env.NEXT_PUBLIC_MINT_RECORD_ID!;
+export const PET_NAMES_ID = process.env.NEXT_PUBLIC_PET_NAMES_ID!;
+export const EQUIPPED_ASSETS_ID = process.env.NEXT_PUBLIC_EQUIPPED_ASSETS_ID!;
 
 // Helper: find a capability object owned by the user
-export async function findCap(address: string, type: string, suiClient: SuiClient) {
-  const { data } = await suiClient.getOwnedObjects({ owner: address, filter: { StructType: type }, options: { showType: true } });
+export async function findCap(
+  address: string,
+  type: string,
+  suiClient: SuiClient
+) {
+  const { data } = await suiClient.getOwnedObjects({
+    owner: address,
+    filter: { StructType: type },
+    options: { showType: true },
+  });
   if (!data.length) throw new Error(`No ${type} found for address ${address}`);
   return data[0].data?.objectId!;
 }
@@ -21,23 +29,62 @@ export async function findCap(address: string, type: string, suiClient: SuiClien
 // ==== GAME ACTIONS ====
 
 // 1. Register user
-export async function createUser(address: string, suiClient: SuiClient, signAndExecute: any) {
-  const tx = new Transaction();
-  tx.moveCall({
-    target: `${PACKAGE_ID}::${MODULE}::create_user`,
-    arguments: [tx.object(SCOREBOARD_ID)],
-  });
-  return signAndExecute({ transactionBlock: tx });
+export function createUser(
+  address: string,
+  suiClient: SuiClient,
+  signAndExecute: any // This should be the `mutate` function from useSignAndExecuteTransaction
+) {
+  console.log("createUser function reached and Creating user now...");
+  console.log("PACKAGE_ID:", PACKAGE_ID);
+  console.log("MODULE:", MODULE);
+  console.log("SCOREBOARD_ID:", SCOREBOARD_ID);
+  try {
+    const tx = new Transaction();
+    console.log("Here is :" + `${PACKAGE_ID}::${MODULE}::create_user`);
+    tx.moveCall({
+      target: `${PACKAGE_ID}::${MODULE}::create_user`,
+      arguments: [tx.object(SCOREBOARD_ID)],
+    });
+
+    // Use the callback pattern, NOT await
+    signAndExecute(
+      { transaction: tx },
+      {
+        onSuccess: (result: any) => {
+          console.log("Registration sent! TX digest: " + result.digest);
+          // You can handle further logic here
+        },
+        onError: (err: any) => {
+          alert("Registration failed: " + err.message);
+          console.error(err);
+        },
+      }
+    );
+  } catch (e) {
+    alert(
+      "Registration failed: " + (e instanceof Error ? e.message : String(e))
+    );
+    console.error(e);
+  }
 }
 
 // 2. Daily check-in
-export async function checkIn(address: string, suiClient: SuiClient, signAndExecute: any) {
+// Only build and send the transaction, return the Promise
+export function checkIn(
+  address: string,
+  suiClient: SuiClient,
+  signAndExecute: any
+) {
   const tx = new Transaction();
   tx.moveCall({
     target: `${PACKAGE_ID}::${MODULE}::check_in`,
-    arguments: [tx.object(SCOREBOARD_ID)],
+    arguments: [
+      tx.object(SCOREBOARD_ID),
+      tx.object(process.env.NEXT_PUBLIC_LAST_CHECKIN_ID!), // <-- Add this!
+      tx.object("0x6"), // <-- Pass the Clock object
+    ],
   });
-  return signAndExecute({ transactionBlock: tx });
+  return signAndExecute({ transaction: tx });
 }
 
 // 3. Mint asset
@@ -50,9 +97,13 @@ export async function mintAsset(
   url: string,
   name: string,
   description: string,
-  attributes: string,
+  attributes: string
 ) {
-  const mintCapId = await findCap(address, `${PACKAGE_ID}::${MODULE}::UserMintCap`, suiClient);
+  const mintCapId = await findCap(
+    address,
+    `${PACKAGE_ID}::${MODULE}::UserMintCap`,
+    suiClient
+  );
   const tx = new Transaction();
   tx.moveCall({
     target: `${PACKAGE_ID}::${MODULE}::mint_asset`,
@@ -69,13 +120,21 @@ export async function mintAsset(
       tx.pure.string(url),
     ],
   });
-  return signAndExecute({ transactionBlock: tx });
+  return signAndExecute({ transaction: tx });
 }
 
-
 // 4. Create pet
-export async function createPet(address: string, suiClient: SuiClient, signAndExecute: any, name: string) {
-  const mintCapId = await findCap(address, `${PACKAGE_ID}::${MODULE}::UserMintCap`, suiClient);
+export async function createPet(
+  address: string,
+  suiClient: SuiClient,
+  signAndExecute: any,
+  name: string
+) {
+  const mintCapId = await findCap(
+    address,
+    `${PACKAGE_ID}::${MODULE}::UserMintCap`,
+    suiClient
+  );
   const tx = new Transaction();
   tx.moveCall({
     target: `${PACKAGE_ID}::${MODULE}::create_pet`,
@@ -85,11 +144,17 @@ export async function createPet(address: string, suiClient: SuiClient, signAndEx
       tx.pure.string(name),
     ],
   });
-  return signAndExecute({ transactionBlock: tx });
+  return signAndExecute({ transaction: tx });
 }
 
 // 5. Equip asset
-export async function equipAsset(address: string, suiClient: SuiClient, signAndExecute: any, petId: string, assetId: string) {
+export async function equipAsset(
+  address: string,
+  suiClient: SuiClient,
+  signAndExecute: any,
+  petId: string,
+  assetId: string
+) {
   const tx = new Transaction();
   tx.moveCall({
     target: `${PACKAGE_ID}::${MODULE}::equip_asset`,
@@ -97,14 +162,20 @@ export async function equipAsset(address: string, suiClient: SuiClient, signAndE
       tx.object(petId),
       tx.object(assetId),
       tx.object(EQUIPPED_ASSETS_ID),
-      tx.object('0x6'), // dummy TxContext, will be replaced by Sui
+      tx.object("0x6"), // dummy TxContext, will be replaced by Sui
     ],
   });
-  return signAndExecute({ transactionBlock: tx });
+  return signAndExecute({ transaction: tx });
 }
 
 // 6. Unequip asset
-export async function unequipAsset(address: string, suiClient: SuiClient, signAndExecute: any, petId: string, assetId: string) {
+export async function unequipAsset(
+  address: string,
+  suiClient: SuiClient,
+  signAndExecute: any,
+  petId: string,
+  assetId: string
+) {
   const tx = new Transaction();
   tx.moveCall({
     target: `${PACKAGE_ID}::${MODULE}::unequip_asset`,
@@ -112,15 +183,24 @@ export async function unequipAsset(address: string, suiClient: SuiClient, signAn
       tx.object(petId),
       tx.pure.id(assetId),
       tx.object(EQUIPPED_ASSETS_ID),
-      tx.object('0x6'), // dummy TxContext, will be replaced by Sui
+      tx.object("0x6"), // dummy TxContext, will be replaced by Sui
     ],
   });
-  return signAndExecute({ transactionBlock: tx });
+  return signAndExecute({ transaction: tx });
 }
 
 // 7. Admin reset score
-export async function adminResetScore(address: string, suiClient: SuiClient, signAndExecute: any, userAddress: string) {
-  const adminCapId = await findCap(address, `${PACKAGE_ID}::${MODULE}::AdminCap`, suiClient);
+export async function adminResetScore(
+  address: string,
+  suiClient: SuiClient,
+  signAndExecute: any,
+  userAddress: string
+) {
+  const adminCapId = await findCap(
+    address,
+    `${PACKAGE_ID}::${MODULE}::AdminCap`,
+    suiClient
+  );
   const tx = new Transaction();
   tx.moveCall({
     target: `${PACKAGE_ID}::${MODULE}::admin_reset_score`,
@@ -130,5 +210,5 @@ export async function adminResetScore(address: string, suiClient: SuiClient, sig
       tx.pure.address(userAddress),
     ],
   });
-  return signAndExecute({ transactionBlock: tx });
+  return signAndExecute({ transaction: tx });
 }
