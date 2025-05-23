@@ -13,7 +13,7 @@ export const EQUIPPED_ASSETS_ID = process.env.NEXT_PUBLIC_EQUIPPED_ASSETS_ID!;
 export const LAST_CHECKIN_ID = process.env.NEXT_PUBLIC_LAST_CHECKIN_ID!;
 export const WALRUS_BASE = process.env.NEXT_PUBLIC_WALRUS_BASE_URL!;
 
-// Helper: find a capability object owned by the user
+// Helper: find points if enough owned by the user
 export async function findCap(
   address: string,
   type: string,
@@ -71,7 +71,6 @@ export function createUser(
 }
 
 // 2. Daily check-in
-// Only build and send the transaction, return the Promise
 export function checkIn(
   address: string,
   suiClient: SuiClient,
@@ -164,14 +163,19 @@ export async function mintAsset(
 export async function createPet(
   address: string,
   suiClient: SuiClient,
-  signAndExecute: any,
-  name: string
+  signAndExecute: any, // mutate function from useSignAndExecuteTransaction
+  name: string,
+  onSuccess?: (result: any) => void,
+  onError?: (err: any) => void
 ) {
+  console.log("[createPet] starting, name:", name, "address:", address);
   const mintCapId = await findCap(
     address,
     `${PACKAGE_ID}::${MODULE}::UserMintCap`,
     suiClient
   );
+  console.log("[createPet] found UserMintCap:", mintCapId);
+
   const tx = new Transaction();
   tx.moveCall({
     target: `${PACKAGE_ID}::${MODULE}::create_pet`,
@@ -181,7 +185,22 @@ export async function createPet(
       tx.pure.string(name),
     ],
   });
-  return signAndExecute({ transaction: tx });
+  console.log("[createPet] built transaction:", tx);
+
+  // Use callback pattern
+  signAndExecute(
+    { transaction: tx },
+    {
+      onSuccess: (result: any) => {
+        console.log("[createPet] transaction success:", result);
+        onSuccess?.(result);
+      },
+      onError: (err: any) => {
+        console.error("[createPet] transaction failed:", err);
+        onError?.(err);
+      },
+    }
+  );
 }
 
 // 5. Equip asset
