@@ -89,6 +89,8 @@ export default function HomePage() {
   const { lastCheckIn, refresh: refreshLastCheckIn } = useLastCheckIn(address, lastCheckInID);
   const [now, setNow] = useState(Date.now() / 1000);
 
+  const [uploadedPreviews, setUploadedPreviews] = useState<string[]>([]);
+
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now() / 1000), 60 * 1000); // update every minute
     return () => clearInterval(interval);
@@ -152,9 +154,9 @@ export default function HomePage() {
         })()
   );
 
-  const equippedAssetIds = new Set(Object.values(equippedAssets));
-  const unequippedAssets = assets.filter(asset => !equippedAssetIds.has(asset.id));
-
+  const equippedAssetIds = new Set(
+    Object.values(equippedAssets).flat()
+  );
 
   useEffect(() => {
     if (maskMode) {
@@ -563,6 +565,7 @@ export default function HomePage() {
     )
   }
 
+
   return (
     <div className="bg-background text-foreground min-h-screen flex flex-col">
       {/* Navbar */}
@@ -793,288 +796,317 @@ export default function HomePage() {
                 <Button onClick={handleCreatePet} className="cursor-pointer">Create Pet</Button>
               </CardContent>
             </Card>
-          ) : (
-            <div>
-              {/* ── 1) Prompt/Sketch & Submit ── */}
-              <div className="space-y-4 mt-8">
-                <h1 className="text-2xl font-bold">Create your Ideal Pet Companion/Tomodachi</h1>
-                {/* Mode Toggle */}
-                <div className="flex space-x-2">
-                  <Button
-                    variant={mode === "prompt" ? "default" : "outline"}
-                    onClick={() => setMode("prompt")}
-                  >
-                    Prompt
-                  </Button>
-                  <Button
-                    variant={mode === "sketch" ? "default" : "outline"}
-                    onClick={() => setMode("sketch")}
-                  >
-                    Sketch
-                  </Button>
-                </div>
-
-                {/* Prompt Input or Sketch Canvas */}
-                {mode === "prompt" ? (
-                  <Input
-                    placeholder="Describe your asset"
-                    value={prompt}
-                    onChange={e => setPrompt(e.target.value)}
-                  />
-                ) : (
-                  <ReactSketchCanvas
-                    ref={canvasRef}
-                    width="512px"
-                    height="512px"
-                    strokeWidth={4}
-                    className="border rounded"
-                  />
-                )}
-
-                {/* Submit Button */}
-                <Button
-                  onClick={mode === "prompt" ? () => generateMutation.mutate() : handleExportSketch}
-                  disabled={generateMutation.isPending || uploadSketchMutation.isPending || (mode === "prompt" && !prompt)}
-                >
-                  {mode === "prompt" ? 
-                    (generateMutation.isPending ? "Generating..." : "Generate Preview") : 
-                    (uploadSketchMutation.isPending ? "Uploading..." : "Submit Sketch")}
-                </Button>
-              </div>
-
-              {/* ── 2) GPT-Image-1 Options & Previews ── */}
-              <div className="space-y-4 mt-8">
-                <h1 className="text-2xl font-bold">Preview Settings</h1>
-                {/* Options Selectors */}
-                <div className="flex flex-col md:flex-row gap-4">
-                  <div>
-                    <Label className="mb-1" htmlFor="size-select">Size</Label>
-                    <Select
-                      value={sizeOption}
-                      onValueChange={v =>
-                        setSizeOption(v as "1024x1024" | "1024x1536" | "1536x1024" | "auto")
-                      }
-                    >
-                      <SelectTrigger id="size-select">
-                        <SelectValue placeholder="Size" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1024x1024">1024×1024</SelectItem>
-                        <SelectItem value="1024x1536">1024×1536</SelectItem>
-                        <SelectItem value="1536x1024">1536×1024</SelectItem>
-                        <SelectItem value="auto">auto</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label className="mb-1" htmlFor="quality-select">Quality</Label>
-                    <Select
-                      value={qualityOption}
-                      onValueChange={v =>
-                        setQualityOption(v as "low" | "medium" | "high" | "auto")
-                      }
-                    >
-                      <SelectTrigger id="quality-select">
-                        <SelectValue placeholder="Quality" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="low">low</SelectItem>
-                        <SelectItem value="medium">medium</SelectItem>
-                        <SelectItem value="high">high</SelectItem>
-                        <SelectItem value="auto">auto</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label className="mb-1" htmlFor="background-select">Background</Label>
-                    <Select
-                      value={backgroundOption}
-                      onValueChange={v =>
-                        setBackgroundOption(v as "transparent" | "opaque")
-                      }
-                    >
-                      <SelectTrigger id="background-select">
-                        <SelectValue placeholder="Background" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="transparent">transparent</SelectItem>
-                        <SelectItem value="opaque">opaque</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label className="mb-1" htmlFor="count-input">Quantity</Label>
-                    <Input
-                      id="count-input"
-                      type="number"
-                      min={1}
-                      max={4}
-                      value={numImages}
-                      onChange={e => setNumImages(+e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <Label className="mb-1" htmlFor="moderation-select">Moderation</Label>
-                    <Select
-                      value={moderationLevel}
-                      onValueChange={v => setModerationLevel(v as "auto" | "low")}
-                    >
-                      <SelectTrigger id="moderation-select">
-                        <SelectValue placeholder="Moderation" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="auto">auto</SelectItem>
-                        <SelectItem value="low">low</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-              
-              {/* ── 3) GPT-Image-1 Previews & Minting ── */}
-              <div className="space-y-4 mt-8">
-                {/* Grid of all previews */}
-                {previews.filter(Boolean).length > 0 && (
-                  <div className="flex flex-col space-y-4">
-                    <h1 className="text-2xl font-bold">Previews</h1>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                    {previews
-                      .filter((url) => typeof url === "string" && url.length > 0)
-                      .map((url, idx) => {
-                      const refining = selectedPreviews.includes(url)
-                      const isFinal  = previewUrl === url
-
-                      return (
-                        <div key={idx} className="relative group">
-                          <img
-                            src={url}
-                            alt={`Preview ${idx + 1}`}
-                            className={`w-full h-auto rounded border transition ${
-                              isFinal  ? "ring-2 ring-primary" : ""
-                            }`}
-                          />
-
-                          {/* overlay buttons on hover */}
-                          <div className="absolute inset-0 bg-black bg-opacity-25 opacity-0 group-hover:opacity-100 flex flex-col justify-center items-center space-y-2">
-                            <Button
-                              size="sm"
-                              onClick={() =>
-                                setSelectedPreviews(prev =>
-                                  refining
-                                    ? prev.filter(u => u !== url)
-                                    : [...prev, url]
-                                )
-                              }
-                            >
-                              {refining ? "Unselect refine" : "Select refine"}
-                            </Button>
-
-                            <Button
-                              size="sm"
-                              onClick={() =>
-                                setPreviewUrl(prev => (prev === url ? null : url))
-                              }
-                            >
-                              {isFinal ? "Unselect final" : "Select final"}
-                            </Button>
-                          </div>
-                        </div>
-                      )
-                    })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Refinement UI */}
-                {selectedPreviews.length > 0 && (
-                  <div className="mt-4 mb-4 space-y-2">
-                    <Input
-                      placeholder="Refinement instructions"
-                      value={editPrompt}
-                      onChange={e => setEditPrompt(e.target.value)}
-                    />
+            ) : (
+              <div>
+                {/* ── 1) Prompt/Sketch & Submit ── */}
+                <div className="space-y-4 mt-8">
+                  <h1 className="text-2xl font-bold">Create your Ideal Pet Companion/Tomodachi</h1>
+                  {/* Mode Toggle */}
+                  <div className="flex space-x-2">
                     <Button
-                      onClick={() =>
-                        refineMutation.mutate({ images: selectedPreviews, prompt: editPrompt })
-                      }
-                      disabled={!editPrompt || refineMutation.status === "pending"}
-                      className="mt-2"
+                      variant={mode === "prompt" ? "default" : "outline"}
+                      onClick={() => setMode("prompt")}
                     >
-                      {refineMutation.status === "pending" ? "Refining…" : `Apply Refine for ${selectedPreviews.length}`}
+                      Prompt
+                    </Button>
+                    <Button
+                      variant={mode === "sketch" ? "default" : "outline"}
+                      onClick={() => setMode("sketch")}
+                    >
+                      Sketch
                     </Button>
                   </div>
-                )}
 
-                {/* Final Mint Form */}
-                {previewUrl && (
-                  <div className="w-full mx-auto">
-                    <h1 className="text-2xl text-start font-bold">Final Preview & Mint</h1>
-                    <Card className="mt-4 w-full max-w-sm rounded-md">
-                      <CardContent className="space-y-4">
-                        <div className="w-full">
-                          <img
-                            src={previewUrl}
-                            alt="Selected Preview"
-                            className="w-full h-auto rounded border"
-                          />
-                        </div>
-
-                        <div className="space-y-4">
-                          <Input
-                            placeholder="Asset Name"
-                            value={metaName}
-                            onChange={e => setMetaName(e.target.value)}
-                          />
-                          <Input
-                            placeholder="Description"
-                            value={metaDescription}
-                            onChange={e => setMetaDescription(e.target.value)}
-                          />
-                          <Label className="block text-sm font-medium text-muted-foreground">
-                            Attributes (JSON)
-                          </Label>
-                          <Textarea
-                            value={metaAttributes}
-                            onChange={e => setMetaAttributes(e.target.value)}
-                            className="w-full h-24 p-2 font-mono border rounded resize-y focus:outline-none focus:ring-2 focus:ring-primary"
-                          />
-                        </div>
-
-                        <div className="flex flex-col sm:flex-row sm:space-x-2 space-y-2 sm:space-y-0">
-                          <Input
-                            type="number"
-                            min={0}
-                            placeholder="action"
-                            value={actionValue}
-                            onChange={e => setActionValue(+e.target.value)}
-                            className="flex-1"
-                          />
-                          <Input
-                            type="number"
-                            min={1}
-                            placeholder="frames"
-                            value={framesValue}
-                            onChange={e => setFramesValue(+e.target.value)}
-                            className="flex-1"
-                          />
-                        </div>
-
-                        <Button
-                          onClick={() => mintMutation.mutate()}
-                          disabled={mintMutation.status === "pending" || !metaName || (score ?? 0) < 10}
-                          className="w-full cursor-pointer"
-                        >
-                          {mintMutation.status === "pending"
-                            ? "Minting…"
-                            : "Mint Asset (10 pts)"}
-                        </Button>
-                      </CardContent>
-                    </Card>
+                  <div className="mt-4">
+                    <Label className="inline-block cursor-pointer text-sm text-primary underline">
+                      Upload your own image
+                      <Input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = () => {
+                            const dataUrl = reader.result as string;
+                            // add to local uploaded state
+                            setUploadedPreviews((u) => [dataUrl, ...u]);
+                            // also add to your react-query cache so the rest of the pipeline just works
+                            queryClient.setQueryData<string[]>(
+                              ["draft_previews"],
+                              (old = []) => [dataUrl, ...old]
+                            );
+                            // you can optionally auto-select the first upload as final:
+                            setPreviewUrl(dataUrl);
+                          };
+                          reader.readAsDataURL(file);
+                        }}
+                      />
+                    </Label>
                   </div>
-                )}
+
+                  {/* Prompt Input or Sketch Canvas */}
+                  {mode === "prompt" ? (
+                    <Input
+                      placeholder="Describe your asset"
+                      value={prompt}
+                      onChange={e => setPrompt(e.target.value)}
+                    />
+                  ) : (
+                    <ReactSketchCanvas
+                      ref={canvasRef}
+                      width="512px"
+                      height="512px"
+                      strokeWidth={4}
+                      className="border rounded"
+                    />
+                  )}
+
+                  {/* Submit Button */}
+                  <Button
+                    onClick={mode === "prompt" ? () => generateMutation.mutate() : handleExportSketch}
+                    disabled={generateMutation.isPending || uploadSketchMutation.isPending || (mode === "prompt" && !prompt)}
+                  >
+                    {mode === "prompt" ? 
+                      (generateMutation.isPending ? "Generating..." : "Generate Preview") : 
+                      (uploadSketchMutation.isPending ? "Uploading..." : "Submit Sketch")}
+                  </Button>
+                </div>
+
+                {/* ── 2) GPT-Image-1 Options & Previews ── */}
+                <div className="space-y-4 mt-8">
+                  <h1 className="text-2xl font-bold">Preview Settings</h1>
+                  {/* Options Selectors */}
+                  <div className="flex flex-col md:flex-row gap-4">
+                    <div>
+                      <Label className="mb-1" htmlFor="size-select">Size</Label>
+                      <Select
+                        value={sizeOption}
+                        onValueChange={v =>
+                          setSizeOption(v as "1024x1024" | "1024x1536" | "1536x1024" | "auto")
+                        }
+                      >
+                        <SelectTrigger id="size-select">
+                          <SelectValue placeholder="Size" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1024x1024">1024×1024</SelectItem>
+                          <SelectItem value="1024x1536">1024×1536</SelectItem>
+                          <SelectItem value="1536x1024">1536×1024</SelectItem>
+                          <SelectItem value="auto">auto</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="mb-1" htmlFor="quality-select">Quality</Label>
+                      <Select
+                        value={qualityOption}
+                        onValueChange={v =>
+                          setQualityOption(v as "low" | "medium" | "high" | "auto")
+                        }
+                      >
+                        <SelectTrigger id="quality-select">
+                          <SelectValue placeholder="Quality" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="low">low</SelectItem>
+                          <SelectItem value="medium">medium</SelectItem>
+                          <SelectItem value="high">high</SelectItem>
+                          <SelectItem value="auto">auto</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="mb-1" htmlFor="background-select">Background</Label>
+                      <Select
+                        value={backgroundOption}
+                        onValueChange={v =>
+                          setBackgroundOption(v as "transparent" | "opaque")
+                        }
+                      >
+                        <SelectTrigger id="background-select">
+                          <SelectValue placeholder="Background" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="transparent">transparent</SelectItem>
+                          <SelectItem value="opaque">opaque</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="mb-1" htmlFor="count-input">Quantity</Label>
+                      <Input
+                        id="count-input"
+                        type="number"
+                        min={1}
+                        max={4}
+                        value={numImages}
+                        onChange={e => setNumImages(+e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label className="mb-1" htmlFor="moderation-select">Moderation</Label>
+                      <Select
+                        value={moderationLevel}
+                        onValueChange={v => setModerationLevel(v as "auto" | "low")}
+                      >
+                        <SelectTrigger id="moderation-select">
+                          <SelectValue placeholder="Moderation" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">auto</SelectItem>
+                          <SelectItem value="low">low</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* ── 3) GPT-Image-1 Previews & Minting ── */}
+                <div className="space-y-4 mt-8">
+                  {/* Grid of all previews */}
+                  {previews.filter(Boolean).length > 0 && (
+                    <div className="flex flex-col space-y-4">
+                      <h1 className="text-2xl font-bold">Previews</h1>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                      {previews
+                        .filter((url) => typeof url === "string" && url.length > 0)
+                        .map((url, idx) => {
+                        const refining = selectedPreviews.includes(url)
+                        const isFinal  = previewUrl === url
+
+                        return (
+                          <div key={idx} className="relative group">
+                            <img
+                              src={url}
+                              alt={`Preview ${idx + 1}`}
+                              className={`w-full h-auto rounded border transition ${
+                                isFinal  ? "ring-2 ring-primary" : ""
+                              }`}
+                            />
+
+                            {/* overlay buttons on hover */}
+                            <div className="absolute inset-0 bg-black bg-opacity-25 opacity-0 group-hover:opacity-100 flex flex-col justify-center items-center space-y-2">
+                              <Button
+                                size="sm"
+                                onClick={() =>
+                                  setSelectedPreviews(prev =>
+                                    refining
+                                      ? prev.filter(u => u !== url)
+                                      : [...prev, url]
+                                  )
+                                }
+                              >
+                                {refining ? "Unselect refine" : "Select refine"}
+                              </Button>
+
+                              <Button
+                                size="sm"
+                                onClick={() =>
+                                  setPreviewUrl(prev => (prev === url ? null : url))
+                                }
+                              >
+                                {isFinal ? "Unselect final" : "Select final"}
+                              </Button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Refinement UI */}
+                  {selectedPreviews.length > 0 && (
+                    <div className="mt-4 mb-4 space-y-2">
+                      <Input
+                        placeholder="Refinement instructions"
+                        value={editPrompt}
+                        onChange={e => setEditPrompt(e.target.value)}
+                      />
+                      <Button
+                        onClick={() =>
+                          refineMutation.mutate({ images: selectedPreviews, prompt: editPrompt })
+                        }
+                        disabled={!editPrompt || refineMutation.status === "pending"}
+                        className="mt-2"
+                      >
+                        {refineMutation.status === "pending" ? "Refining…" : `Apply Refine for ${selectedPreviews.length}`}
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Final Mint Form */}
+                  {previewUrl && (
+                    <div className="w-full mx-auto">
+                      <h1 className="text-2xl text-start font-bold">Final Preview & Mint</h1>
+                      <Card className="mt-4 w-full max-w-sm rounded-md">
+                        <CardContent className="space-y-4">
+                          <div className="w-full">
+                            <img
+                              src={previewUrl}
+                              alt="Selected Preview"
+                              className="w-full h-auto rounded border"
+                            />
+                          </div>
+
+                          <div className="space-y-4">
+                            <Input
+                              placeholder="Asset Name"
+                              value={metaName}
+                              onChange={e => setMetaName(e.target.value)}
+                            />
+                            <Input
+                              placeholder="Description"
+                              value={metaDescription}
+                              onChange={e => setMetaDescription(e.target.value)}
+                            />
+                            <Label className="block text-sm font-medium text-muted-foreground">
+                              Attributes (JSON)
+                            </Label>
+                            <Textarea
+                              value={metaAttributes}
+                              onChange={e => setMetaAttributes(e.target.value)}
+                              className="w-full h-24 p-2 font-mono border rounded resize-y focus:outline-none focus:ring-2 focus:ring-primary"
+                            />
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row sm:space-x-2 space-y-2 sm:space-y-0">
+                            <Input
+                              type="number"
+                              min={0}
+                              placeholder="action"
+                              value={actionValue}
+                              onChange={e => setActionValue(+e.target.value)}
+                              className="flex-1"
+                            />
+                            <Input
+                              type="number"
+                              min={1}
+                              placeholder="frames"
+                              value={framesValue}
+                              onChange={e => setFramesValue(+e.target.value)}
+                              className="flex-1"
+                            />
+                          </div>
+
+                          <Button
+                            onClick={() => mintMutation.mutate()}
+                            disabled={mintMutation.status === "pending" || !metaName || (score ?? 0) < 10}
+                            className="w-full cursor-pointer"
+                          >
+                            {mintMutation.status === "pending"
+                              ? "Minting…"
+                              : "Mint Asset (10 pts)"}
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
             
           </div>
@@ -1094,19 +1126,24 @@ export default function HomePage() {
                       <CardDescription>ID: {pet.id}</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-2">
-                        {equippedAssets[pet.id] && (
-                          <div>
-                            <p>Equipped: Asset #{equippedAssets[pet.id]}</p>
+                      {(equippedAssets[pet.id] ?? []).map((assetId) => {
+                        const asset = assets.find(a => a.id === assetId);
+                        return (
+                          <div key={assetId} className="flex items-center space-x-2">
+                            {asset && <img src={asset.url} alt={asset.name} className="w-8 h-8 rounded" />}
+                            <span>{asset ? asset.name : `Asset #${assetId}`}</span>
                             <Button
                               variant="destructive"
                               size="sm"
-                              onClick={()=>handleUnequip(pet.id,equippedAssets[pet.id])}
+                              onClick={() => handleUnequip(pet.id, assetId)}
                               disabled={equipping}
                             >
                               Unequip
                             </Button>
                           </div>
-                        )}
+                        );
+                      })}
+
                       <Button
                         size="sm"
                         variant={selectedPet === pet.id ? "default" : "outline"}
@@ -1131,81 +1168,77 @@ export default function HomePage() {
             </CardHeader>
             <CardContent className="space-y-6">
 
-              {/* 2) Preview + Metadata + Mint */}
-              {previewUrl && (
-                <div className="space-y-3">
-                  <img src={previewUrl} alt="Asset Preview" className="max-h-48 rounded" />
-                  <Input
-                    placeholder="Asset Name"
-                    value={metaName}
-                    onChange={e => setMetaName(e.target.value)}
-                  />
-                  <Input
-                    placeholder="Description"
-                    value={metaDescription}
-                    onChange={e => setMetaDescription(e.target.value)}
-                  />
-                  <Input
-                    placeholder="Attributes (JSON string)"
-                    value={metaAttributes}
-                    onChange={e => setMetaAttributes(e.target.value)}
-                  />
-                  <div className="flex space-x-2">
-                    <Input
-                      type="number"
-                      min={0}
-                      placeholder="action"
-                      value={actionValue}
-                      onChange={e => setActionValue(+e.target.value)}
-                    />
-                    <Input
-                      type="number"
-                      min={1}
-                      placeholder="frames"
-                      value={framesValue}
-                      onChange={e => setFramesValue(+e.target.value)}
-                    />
-                  </div>
-                  <Button
-                    onClick={handleMintAssetWithMeta}
-                    disabled={mintingAsset}
-                  >
-                    Mint Asset (10 pts)
-                  </Button>
-                </div>
-              )}
-
-              <hr />
-
               {/* 3) Already‐minted Assets Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {assets.length > 0 ? (
-    assets.map(asset => {
-      const isEquipped = equippedAssetIds.has(asset.id);
-      return (
-        <Card key={asset.id} className="p-2">
-          <CardHeader>
-            <h2 className="text-lg font-bold">{asset.name}</h2>
-            <CardDescription>ID: {asset.id}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <img src={asset.url} alt={asset.name} className="max-h-32 rounded" />
-            <p className="text-sm">{asset.description}</p>
-            {isEquipped && (
-              <span className="text-xs text-yellow-600 font-semibold">Already Equipped</span>
-            )}
-            <Button
-              size="sm"
-              variant={selectedAsset === asset.id ? "default" : "outline"}
-              onClick={() => setSelectedAsset(asset.id)}
-              disabled={isEquipped}
-            >
-              {isEquipped ? "Equipped" : selectedAsset === asset.id ? "Selected" : "Select"}
-            </Button>
-          </CardContent>
-        </Card>
-      );
-    })
+                  assets.map(asset => {
+                    const isEquipped = equippedAssetIds.has(asset.id);
+                    return (
+                      <Card key={asset.id} className="p-2">
+                        <CardHeader>
+                          <h2 className="text-lg font-bold">{asset.name}</h2>
+                          <CardDescription>ID: {asset.id}</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-2">
+                          <img
+                            src={asset.url}
+                            alt={asset.name}
+                            className="max-h-32 rounded"
+                          />
+                          <p className="text-sm">{asset.description}</p>
+                          {isEquipped && (
+                            <span className="text-xs text-yellow-600 font-semibold">
+                              Already Equipped
+                            </span>
+                          )}
+
+                          {/* Select + Download buttons */}
+                          <div className="flex space-x-2">
+                            <Button
+                              size="sm"
+                              variant={selectedAsset === asset.id ? "default" : "outline"}
+                              onClick={() => setSelectedAsset(asset.id)}
+                              disabled={isEquipped}
+                            >
+                              {isEquipped
+                                ? "Equipped"
+                                : selectedAsset === asset.id
+                                ? "Selected"
+                                : "Select"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={async () => {
+                                try {
+                                  // 1) Fetch the image as a blob
+                                  const res = await fetch(asset.url);
+                                  const blob = await res.blob();
+                                  // 2) Create an object URL for the blob
+                                  const blobUrl = URL.createObjectURL(blob);
+                                  // 3) Create a temporary link and click it
+                                  const link = document.createElement("a");
+                                  link.href = blobUrl;
+                                  link.download = `${asset.name.replace(/\s+/g, "_")}.png`;
+                                  document.body.appendChild(link);
+                                  link.click();
+                                  // 4) Cleanup
+                                  document.body.removeChild(link);
+                                  URL.revokeObjectURL(blobUrl);
+                                } catch (err) {
+                                  console.error("Download failed:", err);
+                                  toast.error("Failed to download image");
+                                }
+                              }}
+                            >
+                              Download
+                            </Button>
+
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })
                 ) : (
                   <p>No assets yet. Mint one above!</p>
                 )}

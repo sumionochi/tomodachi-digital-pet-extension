@@ -17,8 +17,7 @@ export type Asset = {
   description: string;
   attributes: string;
 };
-export type EquippedAssets = Record<string, string>; // petId -> assetId
-
+export type EquippedAssets = Record<string, string[]>;
 // Helper to get Move struct type
 const PET_TYPE = `${PACKAGE_ID}::game::Pet`;
 const ASSET_TYPE = `${PACKAGE_ID}::game::Asset`;
@@ -216,10 +215,9 @@ async function fetchAssets(address: string, suiClient: any): Promise<Asset[]> {
 async function fetchEquippedAssets(
   address: string,
   suiClient: any
-): Promise<EquippedAssets> {
-  // For each pet, check dynamic fields for attached Asset
+): Promise<Record<string, string[]>> {
   const pets = await fetchPets(address, suiClient);
-  const equipped: EquippedAssets = {};
+  const equipped: Record<string, string[]> = {};
   await Promise.all(
     pets.map(async (pet) => {
       try {
@@ -227,13 +225,13 @@ async function fetchEquippedAssets(
         const { data } = await suiClient.getDynamicFields({
           parentId: pet.id,
         });
-        // Find the first Asset dynamic field (if any)
-        const assetField = data.find((f: any) => f.objectType === ASSET_TYPE);
-        if (assetField) {
-          equipped[pet.id] = assetField.name.value;
-        }
+        // Collect all Asset dynamic fields (if any)
+        const assetFields = data.filter(
+          (f: any) => f.objectType === ASSET_TYPE
+        );
+        equipped[pet.id] = assetFields.map((f: any) => f.name.value);
       } catch {
-        // ignore
+        equipped[pet.id] = [];
       }
     })
   );
