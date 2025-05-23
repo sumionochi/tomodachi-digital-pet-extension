@@ -25,6 +25,8 @@ import {
   equipAsset,
   unequipAsset,
   adminResetScore,
+  LAST_CHECKIN_ID,
+  WALRUS_BASE,
 } from "@/lib/sui"
 import {
   useScoreboard,
@@ -35,6 +37,7 @@ import {
 } from "@/hooks/gameHooks"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
+import { useLastCheckIn } from "@/hooks/gameHooks";
 
 import { ReactSketchCanvas, ReactSketchCanvasRef } from "react-sketch-canvas";
 import { useRef } from "react";
@@ -75,16 +78,29 @@ const Bars3Icon = ({ size = 24 }) => (
 );
 
 export default function HomePage() {
+  const lastCheckInID = LAST_CHECKIN_ID;
+
   const suiClient = useSuiClient()
   const account = useCurrentAccount()
   const address = account?.address
   const { mutate: signAndExecute } = useSignAndExecuteTransaction()
+  const { lastCheckIn, refresh: refreshLastCheckIn } = useLastCheckIn(address, lastCheckInID);
+  const [now, setNow] = useState(Date.now() / 1000);
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now() / 1000), 60 * 1000); // update every minute
+    return () => clearInterval(interval);
+  }, []);
+
+  const canCheckIn =
+    !lastCheckIn || now - lastCheckIn >= 86400;
 
   const { score, isRegistered, refresh: refreshScore } = useScoreboard(address)
   const { pets, refresh: refreshPets } = usePets(address)
   const { assets, refresh: refreshAssets } = useAssets(address)
   const { equippedAssets, refresh: refreshEquipped } = useEquippedAssets(address)
   const { isAdmin } = useAdminCap(address)
+  const { mutateAsync: signAndExecuteTransaction } = useSignAndExecuteTransaction();
 
   const [petName, setPetName] = useState("")
   const [mintingAsset, setMintingAsset] = useState(false)
@@ -260,37 +276,97 @@ export default function HomePage() {
     },
   })
 
-  // Mint mutation - clears all previews after minting
   const mintMutation = useMutation<void, Error, void>({
     mutationFn: async () => {
-      if (!address || !previewUrl) return;
-      await mintAsset(
+      console.log("🍃 [mintMutation] start", {
         address,
-        suiClient,
-        signAndExecute,
+        previewUrl,
         actionValue,
         framesValue,
-        previewUrl,
         metaName,
         metaDescription,
         metaAttributes,
+      });
+  
+      if (!address || !previewUrl) {
+        console.error("⚠️ [mintMutation] Missing input", { address, previewUrl });
+        throw new Error("Missing address or preview URL");
+      }
+  
+      // 1) Upload to Walrus if we have a data URL
+      let urlToMint = previewUrl;
+      if (previewUrl.startsWith("data:")) {
+        console.log("🦭 [mintMutation] Uploading Base64 to Walrus…");
+        const uploadRes = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ b64: previewUrl.split(",")[1] }),
+        });
+  
+        console.log("🦭 [mintMutation] Walrus responded:", uploadRes.status);
+        let uploadBody: any;
+        try {
+          uploadBody = await uploadRes.json();
+          console.log("🦭 [mintMutation] upload JSON body:", uploadBody);
+        } catch (e) {
+          console.error("🦭 [mintMutation] failed to parse Walrus response", e);
+          throw new Error("Failed to parse Walrus response");
+        }
+  
+        if (!uploadRes.ok) {
+          console.error("🦭 [mintMutation] Walrus upload failed", uploadBody);
+          throw new Error(`Walrus upload failed: ${JSON.stringify(uploadBody)}`);
+        }
+  
+        const { blobId } = uploadBody;
+        if (!blobId) {
+          console.error("🦭 [mintMutation] No blobId in Walrus response", uploadBody);
+          throw new Error("Walrus upload returned no blobId");
+        }
+  
+        urlToMint = `${process.env.NEXT_PUBLIC_WALRUS_BASE_URL}/v1/blobs/${blobId}`;
+        console.log("🦭 [mintMutation] urlToMint set to", urlToMint);
+      } else {
+        console.log("🔗 [mintMutation] previewUrl is already a URL:", previewUrl);
+      }
+  
+      // 2) Mint on-chain
+      console.log("⛓️ [mintMutation] calling mintAsset with", urlToMint);
+      const result = await mintAsset(
+        address,
+        suiClient,
+        signAndExecuteTransaction,
+        actionValue,
+        framesValue,
+        urlToMint,
+        metaName,
+        metaDescription,
+        metaAttributes
       );
+      console.log("📬 [mintMutation] mintAsset result:", result);
+    },
+  
+    onSuccess: async () => {
+      console.log("🚀 [mintMutation] onSuccess, refreshing assets…");
       await refreshAssets();
-      // reset form state
-      setPrompt('');
-      setGeneratedB64(null);
-      setSelectedPreviews([]);
+      await refreshScore();
+      await refreshLastCheckIn();
+      console.log("🔄 [mintMutation] assets refreshed, clearing form state…");
       setPreviewUrl(null);
-      setMetaName('');
-      setMetaDescription('');
-      setMetaAttributes('');
+      setMetaName("");
+      setMetaDescription("");
+      setMetaAttributes("");
       setActionValue(0);
       setFramesValue(1);
+      queryClient.setQueryData<string[]>(["draft_previews"], []);
+      console.log("🏁 [mintMutation] done");
     },
-    onSuccess() {
-      queryClient.setQueryData<string[]>(["draft_previews"], [])
+  
+    onError: (err) => {
+      console.error("❌ [mintMutation] error", err);
+      alert("Mint failed: " + err.message);
     },
-  })
+  });  
 
   // Handlers
   const handleExportSketch = async () => {
@@ -327,6 +403,8 @@ export default function HomePage() {
         alert("Registration failed: " + String(error));
       }
     } finally {
+      refreshScore();
+      refreshLastCheckIn();
       setLoading(false);
     }
   };
@@ -340,18 +418,19 @@ export default function HomePage() {
         {
           ...opts,
           onSuccess: async (result: any) => {
-            await refreshScore(); // Only refresh after success!
+            await refreshScore();
+            await refreshLastCheckIn(); // <-- Add this!
             if (opts?.onSuccess) opts.onSuccess(result);
           },
           onError: opts?.onError,
         }
       ));
     } finally {
-      refreshScore(); //the refresh function is called here to update the score properly
+      refreshScore();
+      refreshLastCheckIn(); // <-- Add this!
       setLoading(false);
     }
   };
-  
 
   const handleCreatePet = async () => {
     if (!address || !petName) return
@@ -384,7 +463,7 @@ export default function HomePage() {
     await mintAsset(
       address,
       suiClient,
-      signAndExecute,
+      signAndExecuteTransaction,
       actionValue,
       framesValue,
       previewUrl,
@@ -496,14 +575,16 @@ export default function HomePage() {
               <span className="font-mono">{score ?? 0}</span>
             </div>
             {isRegistered ? (
-              <Button
-                size="default"
-                onClick={handleCheckIn}
-                disabled={loading}
-                className="cursor-pointer"
-              >
-                Daily Check-In
-              </Button>
+              <div>
+                <Button
+                  size="default"
+                  onClick={handleCheckIn}
+                  disabled={loading || !canCheckIn}
+                  className="cursor-pointer"
+                >
+                  {canCheckIn ? "Daily Check-In" : `Check in ${Math.ceil((lastCheckIn + 86400 - now) / 3600)} hours`}
+                </Button>
+              </div>
             ) : (
               <Button
                 size="default"
@@ -531,13 +612,16 @@ export default function HomePage() {
             <span className="font-mono">{score ?? 0}</span>
           </div>
           {isRegistered ? (
+            <div>
             <Button
-              size="sm"
+              size="default"
               onClick={handleCheckIn}
-              disabled={loading}
+              disabled={loading || !canCheckIn}
+              className="cursor-pointer"
             >
-              Daily Check-In
+              {canCheckIn ? "Daily Check-In" : `Check in ${Math.ceil((lastCheckIn + 86400 - now) / 3600)} hours`}
             </Button>
+          </div>
           ) : (
             <Button
               size="sm"
@@ -896,7 +980,7 @@ export default function HomePage() {
 
                       <Button
                         onClick={() => mintMutation.mutate()}
-                        disabled={mintMutation.status === "pending" || !metaName}
+                        disabled={mintMutation.status === "pending" || !metaName || (score ?? 0) < 10}
                         className="w-full cursor-pointer"
                       >
                         {mintMutation.status === "pending"

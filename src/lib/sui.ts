@@ -10,6 +10,8 @@ export const SCOREBOARD_ID = process.env.NEXT_PUBLIC_SCOREBOARD_ID!;
 export const MINT_RECORD_ID = process.env.NEXT_PUBLIC_MINT_RECORD_ID!;
 export const PET_NAMES_ID = process.env.NEXT_PUBLIC_PET_NAMES_ID!;
 export const EQUIPPED_ASSETS_ID = process.env.NEXT_PUBLIC_EQUIPPED_ASSETS_ID!;
+export const LAST_CHECKIN_ID = process.env.NEXT_PUBLIC_LAST_CHECKIN_ID!;
+export const WALRUS_BASE = process.env.NEXT_PUBLIC_WALRUS_BASE_URL!;
 
 // Helper: find a capability object owned by the user
 export async function findCap(
@@ -91,7 +93,9 @@ export function checkIn(
 export async function mintAsset(
   address: string,
   suiClient: SuiClient,
-  signAndExecute: any,
+  signAndExecuteTransaction: (opts: {
+    transaction: Transaction;
+  }) => Promise<any>,
   action: number,
   frames: number,
   url: string,
@@ -99,11 +103,26 @@ export async function mintAsset(
   description: string,
   attributes: string
 ) {
+  // 1) find your UserMintCap (unchanged)
   const mintCapId = await findCap(
     address,
     `${PACKAGE_ID}::${MODULE}::UserMintCap`,
     suiClient
   );
+  console.log("Minting with:", {
+    mintCapId,
+    SCOREBOARD_ID,
+    MINT_RECORD_ID,
+    EQUIPPED_ASSETS_ID,
+    name,
+    description,
+    attributes,
+    action,
+    frames,
+    url,
+  });
+
+  // 2) build the moveCall
   const tx = new Transaction();
   tx.moveCall({
     target: `${PACKAGE_ID}::${MODULE}::mint_asset`,
@@ -120,7 +139,25 @@ export async function mintAsset(
       tx.pure.string(url),
     ],
   });
-  return signAndExecute({ transaction: tx });
+  console.log("📤 [mintAsset] built transaction", tx);
+
+  // 3) submit & await on‐chain effects
+  console.log("⛓️ [mintAsset] submitting…");
+  const result = await signAndExecuteTransaction({
+    transaction: tx,
+  });
+  console.log("📬 [mintAsset] result", result);
+
+  // Just return result, don't check result.effects.status.status
+  return result;
+
+  if (!result.effects || result.effects.status.status !== "success") {
+    throw new Error(
+      `Transaction failed: ${result.effects?.status?.error || "Unknown error"}`
+    );
+  }
+
+  return result;
 }
 
 // 4. Create pet

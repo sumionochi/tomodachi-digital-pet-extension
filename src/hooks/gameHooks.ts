@@ -99,6 +99,84 @@ async function fetchIsRegistered(
   }
 }
 
+export function useLastCheckIn(
+  address?: string | null,
+  lastCheckInId?: string
+) {
+  const suiClient = useSuiClient();
+  const [lastCheckIn, setLastCheckIn] = useState<number | null>(null);
+
+  const refresh = useCallback(async () => {
+    if (!address || !lastCheckInId) return;
+
+    // Fetch the LastCheckIn object
+    const lastCheckInObj = await suiClient.getObject({
+      id: lastCheckInId,
+      options: { showContent: true },
+    });
+
+    // Defensive: get the table id for last_check_in
+    let tableId: string | undefined = undefined;
+
+    if (
+      lastCheckInObj.data?.content?.dataType === "moveObject" &&
+      typeof lastCheckInObj.data?.content?.fields === "object" &&
+      lastCheckInObj.data.content.fields !== null &&
+      "last_check_in" in lastCheckInObj.data.content.fields
+    ) {
+      // Now it's safe to access .fields
+      const lastCheckInField = (lastCheckInObj.data.content.fields as any)
+        .last_check_in;
+      if (
+        lastCheckInField &&
+        typeof lastCheckInField === "object" &&
+        "fields" in lastCheckInField &&
+        lastCheckInField.fields &&
+        "id" in lastCheckInField.fields &&
+        lastCheckInField.fields.id &&
+        "id" in lastCheckInField.fields.id
+      ) {
+        tableId = lastCheckInField.fields.id.id;
+      }
+    }
+
+    if (typeof tableId !== "string") {
+      setLastCheckIn(null);
+      return;
+    }
+
+    try {
+      // Fetch the dynamic field object for the user's address
+      const res = await suiClient.getDynamicFieldObject({
+        parentId: tableId,
+        name: { type: "address", value: address },
+      });
+
+      if (
+        res.data?.content?.dataType === "moveObject" &&
+        res.data?.content?.fields &&
+        "value" in res.data.content.fields
+      ) {
+        const value = res.data.content.fields.value;
+        // Defensive: parse value to number
+        const parsedValue =
+          typeof value === "string" ? parseInt(value, 10) : value;
+        setLastCheckIn(typeof parsedValue === "number" ? parsedValue : null);
+      } else {
+        setLastCheckIn(null);
+      }
+    } catch {
+      setLastCheckIn(null);
+    }
+  }, [address, lastCheckInId, suiClient]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { lastCheckIn, refresh };
+}
+
 // Fetch user's pets
 async function fetchPets(address: string, suiClient: any): Promise<Pet[]> {
   const { data } = await suiClient.getOwnedObjects({
