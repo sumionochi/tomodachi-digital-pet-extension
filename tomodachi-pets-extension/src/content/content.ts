@@ -1,5 +1,9 @@
-// src/content/content.ts
-import { PetData, ExtensionMessage } from "../common/types";
+import {
+  PetData,
+  ExtensionMessage,
+  OrbitAssetConfig,
+  Asset,
+} from "../common/types";
 
 console.log("Tomodachi Pets Content Script Injected!");
 
@@ -7,51 +11,132 @@ console.log("Tomodachi Pets Content Script Injected!");
 let petContainer: HTMLDivElement | null = null;
 let currentPetData: PetData | null = null;
 let suiAddress: string | null = null;
-let isVisible = true; // To toggle visibility
+let isVisible = true;
 
-let orbitAssetImgs: HTMLImageElement[] = [];
-let orbitAngle = 0;
-let orbitFrame: number | undefined;
+let userOrbitConfig: OrbitAssetConfig[] = [];
+let currentOrbitIndex = 0;
+let assetDisplayTimeout: number | undefined = undefined;
+let animatedAssetInterval: number | undefined = undefined;
 
-// --------- ANIMATION + CLEANUP ---------
-
-// Animate assets in orbit
-function animateOrbit() {
-  if (!petContainer || !orbitAssetImgs.length) return;
-  orbitAngle += 0.01;
-  const radius = 40;
-  orbitAssetImgs.forEach((img, i) => {
-    const angle = orbitAngle + (i / orbitAssetImgs.length) * 2 * Math.PI;
-    img.style.left = `${Math.cos(angle) * radius}px`;
-    img.style.top = `${Math.sin(angle) * radius}px`;
-  });
-  orbitFrame = requestAnimationFrame(animateOrbit);
-}
-
-// Remove old pet container, asset images, stop animation
 function removePetContainer() {
   if (petContainer) {
     petContainer.remove();
     petContainer = null;
   }
-  if (orbitFrame) {
-    cancelAnimationFrame(orbitFrame);
-    orbitFrame = undefined;
-  }
-  orbitAssetImgs = [];
+  stopAllOrbitTimers();
 }
 
-// --------- CREATE/UPDATE PET DISPLAY ---------
+function stopAllOrbitTimers() {
+  if (animatedAssetInterval) clearInterval(animatedAssetInterval);
+  animatedAssetInterval = undefined;
+  if (assetDisplayTimeout) clearTimeout(assetDisplayTimeout);
+  assetDisplayTimeout = undefined;
+}
+
+function startOrbitCycle() {
+  if (!petContainer || !currentPetData || !userOrbitConfig.length) return;
+  currentOrbitIndex = 0;
+  showOrbitAsset(userOrbitConfig[currentOrbitIndex]);
+}
+
+function showOrbitAsset(config: OrbitAssetConfig) {
+  stopAllOrbitTimers();
+
+  // Remove previous asset images/canvases from petContainer except pet image/name
+  if (petContainer) {
+    Array.from(petContainer.querySelectorAll(".orbit-asset")).forEach((node) =>
+      node.remove()
+    );
+  }
+
+  // Find asset object
+  const asset: Asset | undefined = currentPetData?.assets.find(
+    (a) => a.id === config.id
+  );
+  if (!asset) return;
+
+  if (config.mode === "static") {
+    const img = document.createElement("img");
+    img.src = asset.url;
+    img.className = "orbit-asset";
+    img.style.width = "40px";
+    img.style.height = "40px";
+    img.style.position = "absolute";
+    img.style.transform = "translate(-50%, -50%)";
+    petContainer?.appendChild(img);
+    placeOrbitAssets([img]);
+  } else if (
+    config.mode === "animated" &&
+    config.frameCount &&
+    config.frameSize
+  ) {
+    // Sprite sheet animation
+    const canvas = document.createElement("canvas");
+    canvas.width = config.frameSize;
+    canvas.height = config.frameSize;
+    canvas.className = "orbit-asset";
+    canvas.style.width = "40px";
+    canvas.style.height = "40px";
+    canvas.style.position = "absolute";
+    canvas.style.transform = "translate(-50%, -50%)";
+    petContainer?.appendChild(canvas);
+
+    const spriteImg = new window.Image();
+    spriteImg.src = asset.url;
+    spriteImg.onload = () => {
+      let frame = 0;
+      animatedAssetInterval = window.setInterval(() => {
+        drawSpriteFrame(spriteImg, canvas, frame, config);
+        frame = (frame + 1) % config.frameCount!;
+      }, 1000 / (config.frameRate || 4));
+    };
+    placeOrbitAssets([canvas]);
+  }
+
+  assetDisplayTimeout = window.setTimeout(() => {
+    currentOrbitIndex = (currentOrbitIndex + 1) % userOrbitConfig.length;
+    showOrbitAsset(userOrbitConfig[currentOrbitIndex]);
+  }, config.duration * 1000);
+}
+
+function drawSpriteFrame(
+  img: HTMLImageElement,
+  canvas: HTMLCanvasElement,
+  frame: number,
+  config: OrbitAssetConfig
+) {
+  const ctx = canvas.getContext("2d")!;
+  ctx.clearRect(0, 0, config.frameSize!, config.frameSize!);
+  // 2x2 grid (frameCount = 4)
+  const fx = (frame % 2) * config.frameSize!;
+  const fy = Math.floor(frame / 2) * config.frameSize!;
+  ctx.drawImage(
+    img,
+    fx,
+    fy,
+    config.frameSize!,
+    config.frameSize!,
+    0,
+    0,
+    config.frameSize!,
+    config.frameSize!
+  );
+}
+
+function placeOrbitAssets(elems: HTMLElement[]) {
+  // Only one orbit asset shown at a time; always center to pet image/name
+  elems.forEach((elem) => {
+    elem.style.left = "70px"; // adjust offset as you like
+    elem.style.top = "0px";
+  });
+}
 
 function createPetElements() {
-  // Cleanup before new render
   removePetContainer();
 
   if (!currentPetData) return;
 
   const data = currentPetData;
-
-  // Create the new container
   const newPetContainer = document.createElement("div");
   newPetContainer.id = "tomodachi-pet-container";
   newPetContainer.style.position = "fixed";
@@ -61,11 +146,6 @@ function createPetElements() {
   newPetContainer.style.opacity = isVisible ? "1" : "0";
 
   let petImageSrc = data.pet.imageUrl;
-  if (!petImageSrc && data.assets.length > 0) {
-    // Optionally, fallback to first asset's image if desired
-    // petImageSrc = data.assets[0].url;
-  }
-
   if (petImageSrc) {
     const petImg = document.createElement("img");
     petImg.src = petImageSrc;
@@ -88,36 +168,16 @@ function createPetElements() {
     newPetContainer.appendChild(petNameDiv);
   }
 
-  // Add assets in orbit, with animation
-  orbitAssetImgs = [];
-  if (data.assets && data.assets.length > 0) {
-    data.assets.forEach((asset) => {
-      const assetImg = document.createElement("img");
-      assetImg.src = asset.url;
-      assetImg.alt = asset.name;
-      assetImg.style.width = "25px";
-      assetImg.style.height = "25px";
-      assetImg.style.objectFit = "contain";
-      assetImg.style.position = "absolute";
-      assetImg.style.transition = "left 0.2s linear, top 0.2s linear";
-      assetImg.style.transform = "translate(-50%, -50%)";
-      newPetContainer.appendChild(assetImg);
-      orbitAssetImgs.push(assetImg);
-    });
-  }
-
   document.body.appendChild(newPetContainer);
   petContainer = newPetContainer;
 
-  // (Re-)Start orbit animation if assets exist
-  if (orbitAssetImgs.length > 0) {
-    orbitAngle = 0;
-    if (orbitFrame) cancelAnimationFrame(orbitFrame);
-    animateOrbit();
+  // Start orbit cycle with selected assets
+  if (userOrbitConfig.length > 0) {
+    startOrbitCycle();
   }
 }
 
-// --------- PET CONTAINER POSITION ---------
+// --- Event Handling and Initialization ---
 
 function updatePetPosition(event: MouseEvent) {
   if (petContainer && isVisible) {
@@ -128,44 +188,30 @@ function updatePetPosition(event: MouseEvent) {
   }
 }
 
-// --------- STORAGE CHANGES ---------
-
 function handleStorageChange(
   changes: { [key: string]: chrome.storage.StorageChange },
   areaName: string
 ) {
+  let reloadOrbit = false;
   if (areaName === "local" && changes.petData) {
     currentPetData = changes.petData.newValue as PetData | null;
-    if (isVisible) createPetElements();
-    else if (!currentPetData && petContainer) {
-      removePetContainer();
-    }
+    reloadOrbit = true;
+  }
+  if (areaName === "local" && changes.orbitAssetConfig) {
+    userOrbitConfig = changes.orbitAssetConfig.newValue || [];
+    reloadOrbit = true;
   }
   if (areaName === "local" && changes.suiAddress) {
     suiAddress = changes.suiAddress.newValue as string | null;
-    console.log(
-      "Content Script: Sui address updated from storage.",
-      suiAddress
-    );
-    if (!currentPetData && suiAddress) {
-      chrome.runtime.sendMessage(
-        { type: "GET_PET_DATA" } as ExtensionMessage,
-        (response) => {
-          if (
-            response &&
-            response.status === "success" &&
-            response.payload.petData
-          ) {
-            currentPetData = response.payload.petData as PetData;
-            if (isVisible) createPetElements();
-          }
-        }
-      );
+  }
+  if (reloadOrbit) {
+    if (isVisible && currentPetData) {
+      createPetElements();
+    } else if (!currentPetData && petContainer) {
+      removePetContainer();
     }
   }
 }
-
-// --------- VISIBILITY TOGGLE ---------
 
 function handleVisibilityToggle() {
   isVisible = !isVisible;
@@ -179,18 +225,14 @@ function handleVisibilityToggle() {
   console.log(`Pet companion visibility toggled: ${isVisible ? "ON" : "OFF"}`);
 }
 
-// --------- LISTENERS & INIT ---------
-
 // Listen for messages from background or popup
 chrome.runtime.onMessage.addListener(
   (message: ExtensionMessage, sender, sendResponse) => {
     if (message.type === "PET_DATA_UPDATED") {
       currentPetData = message.payload as PetData;
-      console.log("Content Script: Received PET_DATA_UPDATED", currentPetData);
       if (isVisible) createPetElements();
       sendResponse({ status: "success" });
     } else if (message.type === "PET_DATA_ERROR") {
-      console.error("Content Script: Received PET_DATA_ERROR", message.payload);
       currentPetData = null;
       removePetContainer();
       sendResponse({ status: "error_received" });
@@ -202,46 +244,19 @@ chrome.runtime.onMessage.addListener(
   }
 );
 
-// Initial data load attempt
 function initialize() {
   chrome.storage.local.get(
-    ["petData", "suiAddress", "petCompanionVisible"],
+    ["petData", "suiAddress", "petCompanionVisible", "orbitAssetConfig"],
     (result) => {
-      if (result.suiAddress) {
-        suiAddress = result.suiAddress;
-      }
-      if (result.petData) {
-        currentPetData = result.petData as PetData;
-      }
-      if (typeof result.petCompanionVisible === "boolean") {
+      if (result.suiAddress) suiAddress = result.suiAddress;
+      if (result.petData) currentPetData = result.petData as PetData;
+      if (typeof result.petCompanionVisible === "boolean")
         isVisible = result.petCompanionVisible;
-      }
-
+      if (result.orbitAssetConfig)
+        userOrbitConfig = result.orbitAssetConfig as OrbitAssetConfig[];
       if (currentPetData && isVisible) {
         createPetElements();
-      } else if (suiAddress && !currentPetData) {
-        console.log(
-          "Content Script: Found address, no pet data. Requesting from background."
-        );
-        chrome.runtime.sendMessage(
-          { type: "GET_PET_DATA" } as ExtensionMessage,
-          (response) => {
-            if (
-              response &&
-              response.status === "success" &&
-              response.payload.petData
-            ) {
-              currentPetData = response.payload.petData as PetData;
-              if (isVisible) createPetElements();
-            } else if (response && response.status === "pending") {
-              console.log(
-                "Content Script: Pet data fetch is pending or address exists but no data yet."
-              );
-            }
-          }
-        );
       }
-
       document.addEventListener("mousemove", updatePetPosition);
       chrome.storage.onChanged.addListener(handleStorageChange);
     }
@@ -251,8 +266,6 @@ function initialize() {
 // Only run in top window (not in iframes)
 if (window.self === window.top) {
   initialize();
-} else {
-  console.log("Tomodachi Pets Content Script: Running in an iframe, aborting.");
 }
 
 // Hotkey to toggle visibility (Ctrl+Shift+P)

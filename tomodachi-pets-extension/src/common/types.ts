@@ -26,7 +26,20 @@ export interface PetData {
 }
 
 // For messages between components of the extension
-export interface ExtensionMessage {
-  type: string;
-  payload?: any;
+export type ExtensionMessage =
+  | { type: "PET_DATA_UPDATED"; payload: PetData }
+  | { type: "PET_DATA_ERROR"; payload: string }
+  | { type: "GET_PET_DATA" }
+  | { type: "TOGGLE_VISIBILITY" }
+  | { type: "SAVE_ADDRESS_AND_FETCH"; payload: any }
+  | { type: "FETCH_PET_DATA"; payload: any };
+
+// For orbit config:
+export interface OrbitAssetConfig {
+  id: string; // assetId
+  mode: "static" | "animated";
+  duration: number; // seconds
+  frameSize?: number; // required if animated
+  frameCount?: number; // required if animated
+  frameRate?: number; // required if animated (frames/sec)
 }

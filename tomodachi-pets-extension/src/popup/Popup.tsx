@@ -1,18 +1,28 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { PetData, ExtensionMessage, Pet } from '../common/types';
+import { PetData, ExtensionMessage, Pet, Asset, OrbitAssetConfig } from '../common/types';
 
 const BACKEND_URL = "http://localhost:3001/api/user-pet";
 const PET_LIST_URL = "http://localhost:3001/api/user-pet-list";
+
+function defaultConfigFor(asset: Asset): OrbitAssetConfig {
+  return {
+    id: asset.id,
+    mode: "static",
+    duration: 5
+  };
+}
 
 const Popup: React.FC = () => {
   const [suiAddress, setSuiAddress] = useState<string>('');
   const [petList, setPetList] = useState<Pet[]>([]);
   const [selectedPetId, setSelectedPetId] = useState<string>('');
   const [currentPetData, setCurrentPetData] = useState<PetData | null>(null);
+  const [orbitConfig, setOrbitConfig] = useState<OrbitAssetConfig[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isVisible, setIsVisible] = useState(true);
 
+  // Fetch visibility state
   useEffect(() => {
     chrome.storage.local.get('petCompanionVisible', (res) => {
       setIsVisible(res.petCompanionVisible !== false);
@@ -22,13 +32,14 @@ const Popup: React.FC = () => {
     chrome.storage.local.set({ petCompanionVisible: !isVisible });
     setIsVisible(v => !v);
   };
-  
-  // Load stored address, petId, and petData on mount
+
+  // Load stored address, petId, petData, and orbitConfig on mount
   useEffect(() => {
-    chrome.storage.local.get(['suiAddress', 'petId', 'petData'], (result) => {
+    chrome.storage.local.get(['suiAddress', 'petId', 'petData', 'orbitAssetConfig'], (result) => {
       if (result.suiAddress) setSuiAddress(result.suiAddress);
       if (result.petId) setSelectedPetId(result.petId);
       if (result.petData) setCurrentPetData(result.petData as PetData);
+      if (result.orbitAssetConfig) setOrbitConfig(result.orbitAssetConfig as OrbitAssetConfig[]);
     });
   }, []);
 
@@ -39,7 +50,6 @@ const Popup: React.FC = () => {
         .then(r => r.json())
         .then(data => {
           setPetList(data.pets || []);
-          // Auto-select first pet if nothing selected yet
           if (data.pets?.length && !selectedPetId) setSelectedPetId(data.pets[0].id);
         })
         .catch(() => setPetList([]));
@@ -48,7 +58,7 @@ const Popup: React.FC = () => {
     }
   }, [suiAddress]);
 
-  // Listen for pet data updates from background
+  // Fetch latest pet data when pet changes or after fetch/save
   useEffect(() => {
     const listener = (message: ExtensionMessage) => {
       if (message.type === 'PET_DATA_UPDATED') {
@@ -111,6 +121,90 @@ const Popup: React.FC = () => {
     );
   }, [suiAddress, selectedPetId]);
 
+  // Handle config change and save to storage
+  const handleOrbitConfigChange = (idx: number, patch: Partial<OrbitAssetConfig>) => {
+    setOrbitConfig(cfg => {
+      const newCfg = [...cfg];
+      newCfg[idx] = { ...newCfg[idx], ...patch };
+      chrome.storage.local.set({ orbitAssetConfig: newCfg });
+      return newCfg;
+    });
+  };
+
+  const handleOrbitSelectChange = (assetId: string, checked: boolean) => {
+    setOrbitConfig(cfg => {
+      let next: OrbitAssetConfig[];
+      if (checked) {
+        const asset = currentPetData?.assets.find(a => a.id === assetId);
+        if (!asset) return cfg;
+        next = [...cfg, defaultConfigFor(asset)];
+      } else {
+        next = cfg.filter(a => a.id !== assetId);
+      }
+      chrome.storage.local.set({ orbitAssetConfig: next });
+      return next;
+    });
+  };
+
+  // Render asset config UI
+  function renderAssetConfig(asset: Asset, idx: number) {
+    const conf = orbitConfig.find(a => a.id === asset.id);
+    if (!conf) return null;
+    return (
+      <div key={asset.id} style={{ padding: '8px', borderBottom: '1px solid #eee' }}>
+        <b>{asset.name}</b>
+        <div>
+          <label>
+            <input
+              type="radio"
+              checked={conf.mode === "static"}
+              onChange={() => handleOrbitConfigChange(idx, { mode: "static" })}
+            />
+            Static
+          </label>
+          <label style={{ marginLeft: 10 }}>
+            <input
+              type="radio"
+              checked={conf.mode === "animated"}
+              onChange={() => handleOrbitConfigChange(idx, { mode: "animated", frameSize: 500, frameCount: 4, frameRate: 4 })}
+            />
+            Animated
+          </label>
+        </div>
+        {conf.mode === "animated" && (
+          <div style={{ marginLeft: 20 }}>
+            <label>
+              Frame Size: <input type="number" value={conf.frameSize ?? 500}
+                onChange={e => handleOrbitConfigChange(idx, { frameSize: parseInt(e.target.value, 10) || 500 })} />
+            </label>
+            <label style={{ marginLeft: 10 }}>
+              Frame Count: <input type="number" value={conf.frameCount ?? 4}
+                onChange={e => handleOrbitConfigChange(idx, { frameCount: parseInt(e.target.value, 10) || 4 })} />
+            </label>
+            <label style={{ marginLeft: 10 }}>
+              Frame Rate: <input type="number" value={conf.frameRate ?? 4}
+                onChange={e => handleOrbitConfigChange(idx, { frameRate: parseInt(e.target.value, 10) || 4 })} />
+            </label>
+          </div>
+        )}
+        <div>
+          <label>
+            Duration (sec):
+            <input type="number" value={conf.duration}
+              onChange={e => handleOrbitConfigChange(idx, { duration: Math.max(1, parseInt(e.target.value, 10) || 5) })}
+              style={{ width: 50, marginLeft: 5 }} />
+          </label>
+        </div>
+        <button style={{ marginTop: 2 }} onClick={() => {
+          handleOrbitSelectChange(asset.id, false);
+        }}>Remove</button>
+      </div>
+    );
+  }
+
+  // Drag reorder (optional for bonus)
+  // You can add react-sortable-hoc or simple up/down buttons for config reorder.
+
   return (
     <div>
       <h2>Tomodachi Pet Companion</h2>
@@ -139,7 +233,7 @@ const Popup: React.FC = () => {
       <button onClick={handleToggle}>
         {isVisible ? 'Hide Pet Cursor' : 'Show Pet Cursor'}
       </button>
-      <button onClick={handleRefreshData} disabled={isLoading} style={{marginLeft: 10}}>
+      <button onClick={handleRefreshData} disabled={isLoading} style={{ marginLeft: 10 }}>
         {isLoading ? 'Refreshing...' : 'Refresh Data'}
       </button>
       {error && <p className="error">Error: {error}</p>}
@@ -154,8 +248,19 @@ const Popup: React.FC = () => {
             <ul>
               {currentPetData.assets.map((asset) => (
                 <li key={asset.id}>
-                  {asset.name}
-                  {asset.url && <img src={asset.url} alt={asset.name} style={{maxWidth: '50px', maxHeight: '50px', marginLeft: '10px'}} />}
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={!!orbitConfig.find(a => a.id === asset.id)}
+                      onChange={e => handleOrbitSelectChange(asset.id, e.target.checked)}
+                    />
+                    {asset.name}
+                  </label>
+                  {asset.url && <img src={asset.url} alt={asset.name} style={{ maxWidth: '50px', maxHeight: '50px', marginLeft: '10px' }} />}
+                  {/* If selected, show config */}
+                  {orbitConfig.find(a => a.id === asset.id) &&
+                    renderAssetConfig(asset, orbitConfig.findIndex(a => a.id === asset.id))
+                  }
                 </li>
               ))}
             </ul>
