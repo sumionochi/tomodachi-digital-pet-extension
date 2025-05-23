@@ -181,8 +181,8 @@ function createPetElements() {
 
 function updatePetPosition(event: MouseEvent) {
   if (petContainer && isVisible) {
-    const offsetX = 15;
-    const offsetY = 15;
+    const offsetX = 30;
+    const offsetY = 30;
     petContainer.style.left = `${event.clientX + offsetX}px`;
     petContainer.style.top = `${event.clientY + offsetY}px`;
   }

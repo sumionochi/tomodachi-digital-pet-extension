@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>Tomodachi Pet Settings</title>
+  <link rel="stylesheet" href="popup.css" />
   <style>
     body {
       font-family: sans-serif;
@@ -64,19 +65,12 @@
   </style>
 </head>
 <body>
+  <div class="header">
+    <h1>Tomodachi Pets Settings</h1>
+    <div class="subtitle">Configure your digital companion</div>
+  </div>
   <div id="root"></div>
   <script src="popup.js"></script>
-  <!-- The bundled popup.js will be implicitly loaded if manifest.json points here
-       and webpack outputs popup.js relative to this HTML file.
-       However, with webpack, it's common to have this HTML file copied to dist
-       and script included by HtmlWebpackPlugin or manually.
-       For this setup, assuming popup.js is generated in the same dir as this html by webpack.
-  -->
-  <!-- The above script tag is usually not needed if HtmlWebpackPlugin is used correctly,
-       or if the manifest directly points to this HTML and the JS is in dist.
-       The webpack config will bundle popup/index.tsx into dist/popup.js.
-       The manifest's action.default_popup should be "src/popup/popup.html" (or "dist/popup.html" after build)
-       If popup.html is copied to dist, then script src should be "popup.js"
-  -->
+  <link rel="icon" type="image/png" href="../../icons/icon48.png">
 </body>
 </html>
