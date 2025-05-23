@@ -10,6 +10,9 @@
 !.yarn/releases
 !.yarn/versions
 
+/tomodachi-pets-extension/node_modules
+/tomodachi-pets-extension/backend/node_modules
+
 # testing
 /coverage
 

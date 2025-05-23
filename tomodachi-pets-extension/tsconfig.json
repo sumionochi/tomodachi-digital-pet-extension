@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "outDir": "./dist/",
+    "noImplicitAny": true,
+    "module": "esnext", // Changed to esnext for dynamic imports if needed, and aligns with modern JS
+    "target": "es6",
+    "jsx": "react-jsx", // For React 17+ JSX transform
+    "allowJs": true,
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "resolveJsonModule": true,
+    "types": ["chrome", "node"] // Added node for webpack config if it uses TS
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "backend"]
+}

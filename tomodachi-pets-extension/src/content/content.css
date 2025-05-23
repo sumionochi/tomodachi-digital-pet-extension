@@ -1,0 +1,13 @@
+/* src/content/content.css */
+/* Styles for elements injected by content.ts */
+/*
+#tomodachi-pet-container {
+  Example:
+  border: 1px solid red; 
+}
+#tomodachi-pet-container img {
+  display: block;
+}
+*/
+/* Add any specific global styles for your injected elements here if needed.
+   Most styling is done inline in content.ts for dynamic elements. */
