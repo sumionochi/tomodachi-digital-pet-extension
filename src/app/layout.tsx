@@ -21,6 +21,10 @@ const ptSans = PT_Sans({
 export const metadata: Metadata = {
   title: "Tomodachi · a digital pet game",
   description: "Your SuiPet companion in the Sui ecosystem.",
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({

@@ -47,7 +47,7 @@ import {
   CollapsibleContent,
 } from "@/components/ui/collapsible";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, DownloadIcon, Trash, TrashIcon } from "lucide-react";
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -60,6 +60,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Textarea } from "@/components/ui/textarea"
 import Link from "next/link"
 import { toast } from "sonner"
+import AttributeInputList from "@/components/AttributeInputList";
 
 const Bars3Icon = ({ size = 24 }) => (
   <svg
@@ -121,7 +122,7 @@ export default function HomePage() {
   const [generatedB64, setGeneratedB64] = useState<string | null>(null);
   const [metaName, setMetaName] = useState<string>('');
   const [metaDescription, setMetaDescription] = useState<string>('');
-  const [metaAttributes, setMetaAttributes] = useState<string>('');
+  const [attributeList, setAttributeList] = useState<{ key: string; value: string }[]>([]);
   const [actionValue, setActionValue] = useState<number>(0);
   const [framesValue, setFramesValue] = useState<number>(1);
   const [introOpen, setIntroOpen] = useState(true);
@@ -219,6 +220,7 @@ export default function HomePage() {
     },
     onSuccess(newUrls) {
       // always add to your draft cache
+      toast.success("Generated Successfully!");
       queryClient.setQueryData<string[]>(
         ["draft_previews"],
         (old = []) => [...old, ...newUrls]
@@ -256,6 +258,7 @@ export default function HomePage() {
       },
       onSuccess: (newUrl) => {
         // Add the new combined asset to your cache
+        toast.success("Refined Successfully!");
         queryClient.setQueryData<string[]>(
           ["draft_previews"],
           (old = []) => [...old, newUrl]
@@ -292,6 +295,12 @@ export default function HomePage() {
 
   const mintMutation = useMutation<void, Error, void>({
     mutationFn: async () => {
+      const attributesJson = JSON.stringify(
+        attributeList.filter(a => a.key.trim()).reduce((acc, a) => {
+          acc[a.key] = a.value;
+          return acc;
+        }, {} as Record<string, string>)
+      );
       console.log("🍃 [mintMutation] start", {
         address,
         previewUrl,
@@ -299,7 +308,7 @@ export default function HomePage() {
         framesValue,
         metaName,
         metaDescription,
-        metaAttributes,
+        attributesJson,
       });
   
       if (!address || !previewUrl) {
@@ -355,8 +364,9 @@ export default function HomePage() {
         urlToMint,
         metaName,
         metaDescription,
-        metaAttributes
+        attributesJson
       );
+      
       console.log("📬 [mintMutation] mintAsset result:", result);
     },
   
@@ -369,11 +379,12 @@ export default function HomePage() {
       setPreviewUrl(null);
       setMetaName("");
       setMetaDescription("");
-      setMetaAttributes("");
+      setAttributeList([]);
       setActionValue(0);
       setFramesValue(1);
       queryClient.setQueryData<string[]>(["draft_previews"], []);
       console.log("🏁 [mintMutation] done");
+      toast.success("Minting was successful!");
     },
   
     onError: (err) => {
@@ -396,19 +407,22 @@ export default function HomePage() {
   };
 
   const handleRegister = async () => {
-    console.log("Registering user..." + address);
-    if (!address) {
-      console.log("Registering user to check if null..." + address);
-      return;
-    };
+    if (!address) return;
     setLoading(true);
-    console.log("Loading set to begin");
     try {
-      console.log("Registering user..." + address);
-      await createUser(address, suiClient, signAndExecute);
-      console.log("Registered the user..." + isRegistered);
-      await refreshScore();
-      console.log("Completed with refreshed score..." + score);
+      await createUser(address, suiClient, (args: any, opts: any) =>
+        signAndExecute(args, {
+          ...opts,
+          onSuccess: async (result: any) => {
+            await refreshScore();
+            await refreshAssets();
+            await refreshLastCheckIn();
+            toast.success("Registrated successfully!");
+            if (opts?.onSuccess) opts.onSuccess(result);
+          },
+          onError: opts?.onError,
+        })
+      );
     } catch (error: unknown) {
       console.error("Register error:", error);
       if (error instanceof Error) {
@@ -417,129 +431,128 @@ export default function HomePage() {
         alert("Registration failed: " + String(error));
       }
     } finally {
-      refreshAssets();
-      refreshScore();
-      refreshLastCheckIn();
       setLoading(false);
     }
   };
-
+  
   const handleCheckIn = async () => {
     if (!address) return;
     setLoading(true);
     try {
-      await checkIn(address, suiClient, (args: any, opts: any) => signAndExecute(
-        args,
-        {
+      await checkIn(address, suiClient, (args: any, opts: any) =>
+        signAndExecute(args, {
           ...opts,
           onSuccess: async (result: any) => {
             await refreshScore();
-            await refreshLastCheckIn(); // <-- Add this!
+            await refreshLastCheckIn();
+            toast.success("Score set successfully!");
             if (opts?.onSuccess) opts.onSuccess(result);
           },
           onError: opts?.onError,
-        }
-      ));
+        })
+      );
     } finally {
-      refreshScore();
-      refreshLastCheckIn(); // <-- Add this!
       setLoading(false);
     }
   };
-
-  // page.tsx
+  
   const handleCreatePet = async () => {
-    if (!address || !petName) {
-      console.log("[handleCreatePet] missing address or petName:", { address, petName });
-      return;
-    }
-    console.log("[handleCreatePet] about to create pet with name:", petName);
-
+    if (!address || !petName) return;
     setLoading(true);
     try {
-      const result = await createPet(address, suiClient, signAndExecute, petName);
-      console.log("[handleCreatePet] createPet returned:", result);
-      setPetName("");
-      await refreshPets();
-      console.log("[handleCreatePet] refreshPets complete");
+      await createPet(address, suiClient, (args: any, opts: any) =>
+        signAndExecute(args, {
+          ...opts,
+          onSuccess: async (result: any) => {
+            setPetName("");
+            await refreshPets();
+            await refreshScore();
+            await refreshLastCheckIn();
+            toast.success("Pet minted successfully!");
+            if (opts?.onSuccess) opts.onSuccess(result);
+          },
+          onError: opts?.onError,
+        }),
+        petName
+      );
     } catch (e) {
       console.error("[handleCreatePet] error creating pet:", e);
     } finally {
-      refreshPets();
-      refreshScore();
-      refreshLastCheckIn();
       setLoading(false);
-      console.log("[handleCreatePet] loading set to false");
     }
   };
-
+  
   const handleEquip = async () => {
-    if (!address || !selectedPet || !selectedAsset) return
-    setEquipping(true)
+    if (!address || !selectedPet || !selectedAsset) return;
+    setEquipping(true);
     try {
-      await equipAsset(address, suiClient, signAndExecute, selectedPet, selectedAsset)
-      await refreshEquipped()
-      await refreshAssets()
-      await refreshPets()
-      toast.success("Asset equipped successfully!");
+      await equipAsset(address, suiClient, (args: any, opts: any) =>
+        signAndExecute(args, {
+          ...opts,
+          onSuccess: async (result: any) => {
+            await refreshEquipped();
+            await refreshAssets();
+            await refreshPets();
+            toast.success("Asset equipped successfully!");
+            if (opts?.onSuccess) opts.onSuccess(result);
+          },
+          onError: opts?.onError,
+        }),
+        selectedPet,
+        selectedAsset
+      );
     } catch (e: any) {
       toast.error("Failed to equip asset: " + (e?.message || String(e)));
     } finally {
-      setEquipping(false)
+      setEquipping(false);
     }
-  }
-
+  };
+  
   const handleUnequip = async (petId: string, assetId: string) => {
-    if (!address) return
-    setEquipping(true)
+    if (!address) return;
+    setEquipping(true);
     try {
-      await unequipAsset(address, suiClient, signAndExecute, petId, assetId)
-      await refreshEquipped()
-      await refreshAssets()
-      await refreshPets()
-      toast.success("Asset unequipped successfully!");
+      await unequipAsset(address, suiClient, (args: any, opts: any) =>
+        signAndExecute(args, {
+          ...opts,
+          onSuccess: async (result: any) => {
+            await refreshEquipped();
+            await refreshAssets();
+            await refreshPets();
+            toast.success("Asset unequipped successfully!");
+            if (opts?.onSuccess) opts.onSuccess(result);
+          },
+          onError: opts?.onError,
+        }),
+        petId,
+        assetId
+      );
     } catch (e: any) {
       toast.error("Failed to unequip asset: " + (e?.message || String(e)));
     } finally {
-      setEquipping(false)
+      setEquipping(false);
     }
-  } 
-
-  const handleMintAssetWithMeta = async () => {
-    if (!address || !previewUrl) return;
-    setMintingAsset(true);
-    await mintAsset(
-      address,
-      suiClient,
-      signAndExecuteTransaction,
-      actionValue,
-      framesValue,
-      previewUrl,
-      metaName,
-      metaDescription,
-      metaAttributes,
-    );
-    await refreshAssets();
-    // reset
-    setPrompt('');
-    setGeneratedB64(null);
-    setPreviewUrl(null);
-    setMetaName('');
-    setMetaDescription('');
-    setMetaAttributes('');
-    setActionValue(0);
-    setFramesValue(1);
-    setMintingAsset(false);
   };
-
+  
   const handleAdminSetScore = async () => {
     if (!address || !adminSetUser) return;
     setSettingScore(true);
     try {
-      await adminSetScore(address, suiClient, signAndExecute, adminSetUser, adminSetScoreValue);
-      setAdminSetUser("");
-      setAdminSetScoreValue(0);
-      toast.success("Score set successfully!");
+      await adminSetScore(address, suiClient, (args: any, opts: any) =>
+        signAndExecute(args, {
+          ...opts,
+          onSuccess: async (result: any) => {
+            setAdminSetUser("");
+            setAdminSetScoreValue(0);
+            await refreshScore();
+            toast.success("Score set successfully!");
+            if (opts?.onSuccess) opts.onSuccess(result);
+          },
+          onError: opts?.onError,
+        }),
+        adminSetUser,
+        adminSetScoreValue
+      );
     } catch (e: any) {
       toast.error("Failed to set score: " + (e?.message || String(e)));
     } finally {
@@ -564,7 +577,6 @@ export default function HomePage() {
       </main>
     )
   }
-
 
   return (
     <div className="bg-background text-foreground min-h-screen flex flex-col">
@@ -699,10 +711,10 @@ export default function HomePage() {
                 <Card className="cursor-pointer flex flex-row justify-between items-center">
                   <CardHeader className="w-full">
                     <h1 className="text-2xl font-bold">
-                      Welcome to Tomodachi Pets : a Digital Pet Game
+                      Welcome to Tomodachi Pets: A Digital Pet Game & Browser Companion
                     </h1>
                     <CardDescription>
-                      Your AI-powered, on-chain virtual pet playground
+                      Your AI-powered, on-chain virtual pet playground — now with a live browser pet extension!
                     </CardDescription>
                   </CardHeader>
                   <div className="pr-4">
@@ -729,38 +741,57 @@ export default function HomePage() {
                         <CardContent>
                           <p className="mb-4">
                             Tomodachi Pets lets you <strong>draw or prompt</strong> custom pet accessories, mint them as NFTs on Sui,
-                            and <strong>dynamically bundle</strong> them into your pet to watch it come to life.
+                            and <strong>bundle</strong> them onto your digital pet — all with full on-chain composability. <br />
+                            <span className="text-blue-700 font-semibold">
+                              Now with a Chrome Extension: keep your pet and its assets following your cursor as you browse!
+                            </span>
                           </p>
 
                           <h3 className="text-lg font-medium mb-2">How It Works</h3>
                           <ol className="list-decimal list-inside space-y-2 mb-4">
                             <li>
-                              <strong>Sketch or Type</strong> — give us a prompt (e.g. "ghibli fluffy cat")
+                              <strong>Sketch or Type</strong> — draw an accessory, or give a text prompt (e.g. "Ghibli fluffy cat")
                             </li>
                             <li>
-                              <strong>AI-Gen Service</strong> calls GPT-Image-1 → returns a transparent PNG
+                              <strong>AI-Gen Service</strong> — uses GPT-Image-1 to generate a transparent PNG
                             </li>
                             <li>
-                              <strong>Walrus Storage</strong> stores your image and returns a URL
+                              <strong>Walrus Storage</strong> — stores your image, returns a URL
                             </li>
                             <li>
-                              <strong>Mint Accessory</strong> — spend 10 points to mint that URL as an Asset NFT
+                              <strong>Mint Accessory</strong> — spend points to mint that image as an Asset NFT
                             </li>
                             <li>
-                              <strong>Create & Customize Pet</strong> — mint a named Pet NFT, then equip/unequip your accessories via dynamic fields
+                              <strong>Create & Customize Pet</strong> — mint your pet, equip/unequip assets dynamically
                             </li>
                           </ol>
 
+                          <h3 className="text-lg font-medium mb-2">Browser Extension: Your Pet Follows You!</h3>
+                          <ul className="list-disc list-inside space-y-2 mb-4">
+                            <li>
+                              <strong>Live Pet Cursor:</strong> Your pet and selected assets orbit your cursor on any website!
+                            </li>
+                            <li>
+                              <strong>Fully Customizable:</strong> Choose which assets to display, including static and animated accessories.
+                            </li>
+                            <li>
+                              <strong>Frame-by-Frame Animation:</strong> Animated assets (spritesheets) play smoothly at 4 frames per second.
+                            </li>
+                            <li>
+                              <strong>User Control:</strong> Toggle visibility, asset rotation, and animation speed directly from the extension popup.
+                            </li>
+                          </ul>
+
                           <h3 className="text-lg font-medium mb-2">Game Loop & Rewards</h3>
                           <ul className="list-disc list-inside space-y-2">
-                            <li>📅 <strong>Daily Check-In:</strong> earn 2 points every day</li>
+                            <li>📅 <strong>Daily Check-In:</strong> earn points every day</li>
                             <li>🏆 <strong>Spend Points:</strong> mint unique accessories (10 pts each)</li>
                             <li>🎨 <strong>Express Yourself:</strong> build a one-of-a-kind pet with your own designs</li>
                             <li>🔄 <strong>Composable NFTs:</strong> equip, unequip, or swap assets anytime</li>
                           </ul>
 
                           <p className="mt-4 text-sm text-muted-foreground">
-                            All images and metadata live on-chain and in Walrus, giving you full ownership and on-the-fly composability.
+                            All images and metadata are fully on-chain and stored in Walrus, giving you true ownership, composability, and a playground for creativity. Try the browser extension for a uniquely interactive experience!
                           </p>
                         </CardContent>
                       </Card>
@@ -787,7 +818,6 @@ export default function HomePage() {
                 </Button>
               </div>
 
-
             {creationType === "pet" ? (
             <Card className="mt-8">
               <CardHeader><h2>Create a New Pet</h2></CardHeader>
@@ -806,14 +836,17 @@ export default function HomePage() {
                     <Button
                       variant={mode === "prompt" ? "default" : "outline"}
                       onClick={() => setMode("prompt")}
+                      className="cursor-pointer"
                     >
                       Prompt
                     </Button>
                     <Button
                       variant={mode === "sketch" ? "default" : "outline"}
                       onClick={() => setMode("sketch")}
+                      disabled={true}
+                      className="cursor-pointer"
                     >
-                      Sketch
+                      Sketch (Coming Soon)
                     </Button>
                   </div>
 
@@ -1040,7 +1073,7 @@ export default function HomePage() {
                   {/* Final Mint Form */}
                   {previewUrl && (
                     <div className="w-full mx-auto">
-                      <h1 className="text-2xl text-start font-bold">Final Preview & Mint</h1>
+                      <h1 className="text-2xl text-start font-bold mt-8">Final Preview & Mint</h1>
                       <Card className="mt-4 w-full max-w-sm rounded-md">
                         <CardContent className="space-y-4">
                           <div className="w-full">
@@ -1063,16 +1096,20 @@ export default function HomePage() {
                               onChange={e => setMetaDescription(e.target.value)}
                             />
                             <Label className="block text-sm font-medium text-muted-foreground">
-                              Attributes (JSON)
+                              Attributes
                             </Label>
-                            <Textarea
-                              value={metaAttributes}
-                              onChange={e => setMetaAttributes(e.target.value)}
-                              className="w-full h-24 p-2 font-mono border rounded resize-y focus:outline-none focus:ring-2 focus:ring-primary"
+                            <AttributeInputList
+                              attributes={attributeList}
+                              onChange={setAttributeList}
                             />
+
                           </div>
 
                           <div className="flex flex-col sm:flex-row sm:space-x-2 space-y-2 sm:space-y-0">
+                            <div className="flex flex-col">
+                            <Label className="block text-sm font-medium text-muted-foreground">
+                              Asset No.
+                            </Label>
                             <Input
                               type="number"
                               min={0}
@@ -1081,6 +1118,11 @@ export default function HomePage() {
                               onChange={e => setActionValue(+e.target.value)}
                               className="flex-1"
                             />
+                            </div>
+                            <div className="flex flex-col">
+                            <Label className="block text-sm font-medium text-muted-foreground">
+                              Frames
+                            </Label>
                             <Input
                               type="number"
                               min={1}
@@ -1089,6 +1131,7 @@ export default function HomePage() {
                               onChange={e => setFramesValue(+e.target.value)}
                               className="flex-1"
                             />
+                            </div>
                           </div>
 
                           <Button
@@ -1106,9 +1149,7 @@ export default function HomePage() {
                   )}
                 </div>
               </div>
-            )}
-
-            
+            )}      
           </div>
         )}
 
@@ -1120,25 +1161,24 @@ export default function HomePage() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {pets.length>0 ? pets.map(pet=>(
-                  <Card key={pet.id} className="p-2">
-                    <CardHeader>
-                      <h1 className="text-2xl font-bold">{pet.name}</h1>
-                      <CardDescription>ID: {pet.id}</CardDescription>
+                  <Card key={pet.id} className="hover:shadow-md transition-shadow">
+                    <CardHeader className="flex flex-col space-y-1">
+                      <h2 className="text-xl font-semibold">{pet.name}</h2>
+                      <p className="text-xs text-muted-foreground break-all">ID: {pet.id}</p>
                     </CardHeader>
-                    <CardContent className="space-y-2">
+                    <CardContent className="space-y-3">
+                      <h3 className="font-medium">Equipped Assets</h3>
                       {(equippedAssets[pet.id] ?? []).map((assetId) => {
-                        const asset = assets.find(a => a.id === assetId);
                         return (
                           <div key={assetId} className="flex items-center space-x-2">
-                            {asset && <img src={asset.url} alt={asset.name} className="w-8 h-8 rounded" />}
-                            <span>{asset ? asset.name : `Asset #${assetId}`}</span>
+                            <span className="text-sm text-muted-foreground break-all">Asset ID: {assetId}</span>
                             <Button
                               variant="destructive"
                               size="sm"
                               onClick={() => handleUnequip(pet.id, assetId)}
                               disabled={equipping}
                             >
-                              Unequip
+                              <TrashIcon className="h-4 w-4" />
                             </Button>
                           </div>
                         );
@@ -1147,14 +1187,17 @@ export default function HomePage() {
                       <Button
                         size="sm"
                         variant={selectedPet === pet.id ? "default" : "outline"}
-                        onClick={()=>setSelectedPet(pet.id)}
+                        onClick={() =>
+                          setSelectedPet(prev => (prev === pet.id ? null : pet.id))
+                        }
+                        className="w-full"
                       >
-                        {selectedPet===pet.id?"Selected":"Select"}
+                        {selectedPet === pet.id ? "Selected" : "Select Pet"}
                       </Button>
                     </CardContent>
                   </Card>
                 )) : (
-                  <p>No pets yet. Create one above!</p>
+                  <p className="text-center col-span-full">No pets yet. Create one above!</p>
                 )}
               </div>
             </CardContent>
@@ -1163,99 +1206,85 @@ export default function HomePage() {
 
         {activeTab === "assets" && (
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-col space-y-1">
               <h1 className="text-2xl font-bold">Your Assets</h1>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-3">
 
-              {/* 3) Already‐minted Assets Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {assets.length > 0 ? (
-                  assets.map(asset => {
-                    const isEquipped = equippedAssetIds.has(asset.id);
-                    return (
-                      <Card key={asset.id} className="p-2">
-                        <CardHeader>
-                          <h2 className="text-lg font-bold">{asset.name}</h2>
-                          <CardDescription>ID: {asset.id}</CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-2">
-                          <img
-                            src={asset.url}
-                            alt={asset.name}
-                            className="max-h-32 rounded"
-                          />
-                          <p className="text-sm">{asset.description}</p>
-                          {isEquipped && (
-                            <span className="text-xs text-yellow-600 font-semibold">
-                              Already Equipped
-                            </span>
-                          )}
-
-                          {/* Select + Download buttons */}
-                          <div className="flex space-x-2">
-                            <Button
-                              size="sm"
-                              variant={selectedAsset === asset.id ? "default" : "outline"}
-                              onClick={() => setSelectedAsset(asset.id)}
-                              disabled={isEquipped}
-                            >
-                              {isEquipped
-                                ? "Equipped"
-                                : selectedAsset === asset.id
-                                ? "Selected"
-                                : "Select"}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={async () => {
-                                try {
-                                  // 1) Fetch the image as a blob
-                                  const res = await fetch(asset.url);
-                                  const blob = await res.blob();
-                                  // 2) Create an object URL for the blob
-                                  const blobUrl = URL.createObjectURL(blob);
-                                  // 3) Create a temporary link and click it
-                                  const link = document.createElement("a");
-                                  link.href = blobUrl;
-                                  link.download = `${asset.name.replace(/\s+/g, "_")}.png`;
-                                  document.body.appendChild(link);
-                                  link.click();
-                                  // 4) Cleanup
-                                  document.body.removeChild(link);
-                                  URL.revokeObjectURL(blobUrl);
-                                } catch (err) {
-                                  console.error("Download failed:", err);
-                                  toast.error("Failed to download image");
-                                }
-                              }}
-                            >
-                              Download
-                            </Button>
-
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })
-                ) : (
-                  <p>No assets yet. Mint one above!</p>
-                )}
-              </div>
-
-              {/* 4) Equip to Selected Pet */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {assets.length > 0 ? assets.map(asset => {
+                const isEquipped = equippedAssetIds.has(asset.id);
+                return (
+                  <Card key={asset.id} className="hover:shadow-md transition-shadow">
+                    <CardHeader className="flex flex-col space-y-1">
+                      <h2 className="text-xl font-semibold">{asset.name}</h2>
+                      <p className="text-xs text-muted-foreground break-all">ID: {asset.id}</p>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <img
+                        src={asset.url}
+                        alt={asset.name}
+                        className="w-full h-72 object-cover rounded"
+                      />
+                      <p className="text-sm">{asset.description}</p>
+                      {isEquipped && (
+                        <span className="inline-block text-xs font-medium text-yellow-600">
+                          Equipped
+                        </span>
+                      )}
+                      <div className="flex space-x-2">
+                        <Button
+                          size="sm"
+                          variant={isEquipped ? "outline" : (selectedAsset === asset.id ? "default" : "outline")}
+                          disabled={isEquipped}
+                          onClick={() =>
+                            setSelectedAsset(prev => (prev === asset.id ? null : asset.id))
+                          }
+                          className="flex-1"
+                        >
+                          {isEquipped
+                            ? "Equipped"
+                            : (selectedAsset === asset.id ? "Selected" : "Select")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="default"
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(asset.url);
+                              const blob = await res.blob();
+                              const blobUrl = URL.createObjectURL(blob);
+                              const link = document.createElement("a");
+                              link.href = blobUrl;
+                              link.download = `${asset.name.replace(/\s+/g, "_")}.png`;
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                              URL.revokeObjectURL(blobUrl);
+                            } catch {
+                              toast.error("Download failed");
+                            }
+                          }}
+                          className="px-2 cursor-pointer"
+                        >
+                          <DownloadIcon className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              }) : (
+                <p className="text-center col-span-full">No assets yet. Mint one above!</p>
+              )}
+              {/* Equip action */}
               {selectedPet && selectedAsset && (
-                <div className="flex items-center space-x-4">
-                  <p>
-                    Equip <strong>{assets.find(a => a.id === selectedAsset)?.name}</strong> to{" "}
-                    <strong>{pets.find(p => p.id === selectedPet)?.name}</strong>
-                  </p>
+                <div className="col-span-full flex justify-center">
                   <Button onClick={handleEquip} disabled={equipping}>
-                    Equip
+                    Equip <strong>{assets.find(a => a.id === selectedAsset)?.name}</strong> to <strong>{pets.find(p => p.id === selectedPet)?.name}</strong>
                   </Button>
                 </div>
               )}
+            </div>
             </CardContent>
           </Card>
         )}
@@ -1267,10 +1296,9 @@ export default function HomePage() {
             </CardHeader>
             <CardContent className="space-y-4">
               {isAdmin && (
-                <div className="space-y-2">
+                <div className="space-y-4">
                   <h3 className="text-lg font-medium">Admin Controls</h3>
                   {/* --- New: Set Score --- */}
-                  <hr />
                   <Input
                     placeholder="User address"
                     value={adminSetUser}
@@ -1292,16 +1320,74 @@ export default function HomePage() {
                 </div>
               )}
               <div>
-                <h3 className="text-lg font-medium mb-2">About SuiPet</h3>
-                <p className="mb-4">
-                  SuiPet is a virtual pet platform built on the Sui
-                  blockchain. Earn points, mint assets, and customize your digital
-                  companion!
-                </p>
+                <h1 className="text-xl pt-4">SuiPet Game: <code className=" italic">game.move</code> Contract Overview</h1>
+
+                <h2 className="mt-4">What is SuiPet?</h2>
                 <p>
-                  Check back regularly for new features and updates to the SuiPet platform.
+                  <strong>SuiPet</strong> is a virtual pet platform built on the Sui blockchain. Users can register, earn points, mint unique pets and assets, and customize their digital companions. The <code>game.move</code> contract implements all core game logic, asset management, and admin controls.
+                </p>
+
+                <h2 className="mt-4">Core Game Logic</h2>
+                <h3 className="mt-2">1. User Registration & Scoreboard</h3>
+                <p>
+                  New users register via <code>create_user</code>. Each user is added to the global <strong>ScoreBoard</strong> and starts with 100 points. Scores are tracked in a table mapping addresses to scores.
+                </p>
+
+                <h3 className="mt-2">2. Daily Check-In</h3>
+                <p>
+                  Users can check in once every 24 hours using <code>check_in</code>. This increases their score by 2 points and updates their last check-in timestamp. The contract enforces the 24-hour rule using the Sui <strong>Clock</strong> object.
+                </p>
+
+                <h3 className="mt-2">3. Minting Assets</h3>
+                <p>
+                  Users can mint assets (e.g., accessories for pets) by spending points (<code>PRICE_ASSET = 10</code>). Each asset has rich metadata (name, description, attributes, action, frames, and URL). Minted assets are tracked per user, and an event is emitted for each mint.
+                </p>
+
+                <h3 className="mt-2">4. Minting Pets</h3>
+                <p>
+                  Users can mint a unique pet by providing a name. The contract ensures pet names are globally unique using the <strong>PetNames</strong> table. Each pet is an NFT with a unique ID and name.
+                </p>
+
+                <h3 className="mt-2">5. Equipping and Unequipping Assets</h3>
+                <p>
+                  Assets can be equipped to pets, but each asset can only be equipped to one pet at a time (global uniqueness enforced). The contract uses Sui's <strong>dynamic_object_field</strong> to attach assets to pets. Equipping or unequipping emits events and updates the global equipped status.
+                </p>
+
+                <h2 className="mt-4">Admin Logic</h2>
+                <h3 className="mt-2">AdminCap: The Admin Capability</h3>
+                <p>
+                  The contract defines an <code>AdminCap</code> object, which is transferred to the contract deployer during initialization. Only the holder of <code>AdminCap</code> can perform privileged admin actions.
+                </p>
+
+                <h3 className="mt-2">Admin Functions</h3>
+                <h4>Set User Score</h4>
+                <p>
+                  <code>admin_set_score</code> allows the admin to set or update any user's score directly. This can be used for rewards, penalties, or correcting errors.
+                </p>
+
+                <h4>Initialization</h4>
+                <p>
+                  During <code>init</code>, the contract sets up all global objects (scoreboard, mint records, pet names, equipped assets, last check-in) and transfers the <code>AdminCap</code> and <code>UserMintCap</code> to the deployer. All other objects are shared for global access.
+                </p>
+
+                <h2 className="mt-4">Events</h2>
+                <p>
+                  The contract emits events for minting assets, equipping, and unequipping, enabling off-chain apps to track user actions and asset changes.
+                </p>
+
+                <h2 className="mt-4">Security & Error Handling</h2>
+                <ul>
+                  <li>All critical actions have error codes (e.g., already registered, not enough score, name taken, asset already equipped).</li>
+                  <li>Global uniqueness is enforced for pet names and equipped assets.</li>
+                  <li>Admin-only functions require the <code>AdminCap</code> object.</li>
+                </ul>
+
+                <h2 className="mt-4">Summary</h2>
+                <p>
+                  The <code>game.move</code> contract provides a robust, extensible foundation for SuiPet, leveraging Sui's object model, dynamic fields, and capability-based admin controls. It ensures fair gameplay, secure asset management, and flexible admin intervention.
                 </p>
               </div>
+
             </CardContent>
           </Card>
         )}
