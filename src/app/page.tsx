@@ -24,9 +24,9 @@ import {
   createUser,
   equipAsset,
   unequipAsset,
-  adminResetScore,
   LAST_CHECKIN_ID,
   WALRUS_BASE,
+  adminSetScore,
 } from "@/lib/sui"
 import {
   useScoreboard,
@@ -59,6 +59,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Textarea } from "@/components/ui/textarea"
 import Link from "next/link"
+import { toast } from "sonner"
 
 const Bars3Icon = ({ size = 24 }) => (
   <svg
@@ -127,6 +128,10 @@ export default function HomePage() {
   const [mode, setMode] = useState<"prompt" | "sketch">("prompt");
   const canvasRef = useRef<ReactSketchCanvasRef>(null);
 
+  const [adminSetUser, setAdminSetUser] = useState("");
+  const [adminSetScoreValue, setAdminSetScoreValue] = useState<number>(0);
+  const [settingScore, setSettingScore] = useState(false);
+
   const [sizeOption, setSizeOption] = useState<"1024x1024"|"1024x1536"|"1536x1024"|"auto">("1024x1024")
   const [qualityOption, setQualityOption] = useState<"low"|"medium"|"high"|"auto">("auto")
   const [backgroundOption, setBackgroundOption] = useState<"transparent"|"opaque">("transparent")
@@ -146,6 +151,10 @@ export default function HomePage() {
           return { width: w, height: h };
         })()
   );
+
+  const equippedAssetIds = new Set(Object.values(equippedAssets));
+  const unequippedAssets = assets.filter(asset => !equippedAssetIds.has(asset.id));
+
 
   useEffect(() => {
     if (maskMode) {
@@ -462,22 +471,37 @@ export default function HomePage() {
     }
   };
 
-
   const handleEquip = async () => {
     if (!address || !selectedPet || !selectedAsset) return
     setEquipping(true)
-    await equipAsset(address, suiClient, signAndExecute, selectedPet, selectedAsset)
-    await refreshEquipped()
-    setEquipping(false)
+    try {
+      await equipAsset(address, suiClient, signAndExecute, selectedPet, selectedAsset)
+      await refreshEquipped()
+      await refreshAssets()
+      await refreshPets()
+      toast.success("Asset equipped successfully!");
+    } catch (e: any) {
+      toast.error("Failed to equip asset: " + (e?.message || String(e)));
+    } finally {
+      setEquipping(false)
+    }
   }
 
   const handleUnequip = async (petId: string, assetId: string) => {
     if (!address) return
     setEquipping(true)
-    await unequipAsset(address, suiClient, signAndExecute, petId, assetId)
-    await refreshEquipped()
-    setEquipping(false)
-  }
+    try {
+      await unequipAsset(address, suiClient, signAndExecute, petId, assetId)
+      await refreshEquipped()
+      await refreshAssets()
+      await refreshPets()
+      toast.success("Asset unequipped successfully!");
+    } catch (e: any) {
+      toast.error("Failed to unequip asset: " + (e?.message || String(e)));
+    } finally {
+      setEquipping(false)
+    }
+  } 
 
   const handleMintAssetWithMeta = async () => {
     if (!address || !previewUrl) return;
@@ -506,13 +530,20 @@ export default function HomePage() {
     setMintingAsset(false);
   };
 
-  const handleAdminReset = async () => {
-    if (!address || !adminUser) return
-    setLoading(true)
-    await adminResetScore(address, suiClient, signAndExecute, adminUser)
-    setAdminUser("")
-    setLoading(false)
-  }
+  const handleAdminSetScore = async () => {
+    if (!address || !adminSetUser) return;
+    setSettingScore(true);
+    try {
+      await adminSetScore(address, suiClient, signAndExecute, adminSetUser, adminSetScoreValue);
+      setAdminSetUser("");
+      setAdminSetScoreValue(0);
+      toast.success("Score set successfully!");
+    } catch (e: any) {
+      toast.error("Failed to set score: " + (e?.message || String(e)));
+    } finally {
+      setSettingScore(false);
+    }
+  };
 
   if (!account) {
     return (
@@ -1055,16 +1086,6 @@ export default function HomePage() {
               <h1 className="text-2xl font-bold">Your Pets</h1>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex space-x-2">
-                <Input
-                  placeholder="Pet name"
-                  value={petName}
-                  onChange={e=>setPetName(e.target.value)}
-                />
-                <Button onClick={handleCreatePet} disabled={loading}>
-                  Create Pet
-                </Button>
-              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {pets.length>0 ? pets.map(pet=>(
                   <Card key={pet.id} className="p-2">
@@ -1073,19 +1094,19 @@ export default function HomePage() {
                       <CardDescription>ID: {pet.id}</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-2">
-                      {equippedAssets[pet.id] && (
-                        <div>
-                          <p>Equipped: Asset #{equippedAssets[pet.id]}</p>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={()=>handleUnequip(pet.id,equippedAssets[pet.id])}
-                            disabled={equipping}
-                          >
-                            Unequip
-                          </Button>
-                        </div>
-                      )}
+                        {equippedAssets[pet.id] && (
+                          <div>
+                            <p>Equipped: Asset #{equippedAssets[pet.id]}</p>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={()=>handleUnequip(pet.id,equippedAssets[pet.id])}
+                              disabled={equipping}
+                            >
+                              Unequip
+                            </Button>
+                          </div>
+                        )}
                       <Button
                         size="sm"
                         variant={selectedPet === pet.id ? "default" : "outline"}
@@ -1159,25 +1180,32 @@ export default function HomePage() {
               {/* 3) Already‐minted Assets Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {assets.length > 0 ? (
-                  assets.map(asset => (
-                    <Card key={asset.id} className="p-2">
-                      <CardHeader>
-                        <h2 className="text-lg font-bold">{asset.name}</h2>
-                        <CardDescription>ID: {asset.id}</CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-2">
-                        <img src={asset.url} alt={asset.name} className="max-h-32 rounded" />
-                        <p className="text-sm">{asset.description}</p>
-                        <Button
-                          size="sm"
-                          variant={selectedAsset === asset.id ? "default" : "outline"}
-                          onClick={() => setSelectedAsset(asset.id)}
-                        >
-                          {selectedAsset === asset.id ? "Selected" : "Select"}
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  ))
+    assets.map(asset => {
+      const isEquipped = equippedAssetIds.has(asset.id);
+      return (
+        <Card key={asset.id} className="p-2">
+          <CardHeader>
+            <h2 className="text-lg font-bold">{asset.name}</h2>
+            <CardDescription>ID: {asset.id}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <img src={asset.url} alt={asset.name} className="max-h-32 rounded" />
+            <p className="text-sm">{asset.description}</p>
+            {isEquipped && (
+              <span className="text-xs text-yellow-600 font-semibold">Already Equipped</span>
+            )}
+            <Button
+              size="sm"
+              variant={selectedAsset === asset.id ? "default" : "outline"}
+              onClick={() => setSelectedAsset(asset.id)}
+              disabled={isEquipped}
+            >
+              {isEquipped ? "Equipped" : selectedAsset === asset.id ? "Selected" : "Select"}
+            </Button>
+          </CardContent>
+        </Card>
+      );
+    })
                 ) : (
                   <p>No assets yet. Mint one above!</p>
                 )}
@@ -1208,17 +1236,25 @@ export default function HomePage() {
               {isAdmin && (
                 <div className="space-y-2">
                   <h3 className="text-lg font-medium">Admin Controls</h3>
+                  {/* --- New: Set Score --- */}
+                  <hr />
                   <Input
                     placeholder="User address"
-                    value={adminUser}
-                    onChange={e=>setAdminUser(e.target.value)}
+                    value={adminSetUser}
+                    onChange={e => setAdminSetUser(e.target.value)}
+                  />
+                  <Input
+                    placeholder="New score"
+                    type="number"
+                    value={adminSetScoreValue}
+                    onChange={e => setAdminSetScoreValue(Number(e.target.value))}
                   />
                   <Button
-                    variant="destructive"
-                    onClick={handleAdminReset}
-                    disabled={loading || !adminUser}
+                    variant="default"
+                    onClick={handleAdminSetScore}
+                    disabled={settingScore || !adminSetUser}
                   >
-                    Reset User Score
+                    {settingScore ? "Setting..." : "Set User Score"}
                   </Button>
                 </div>
               )}

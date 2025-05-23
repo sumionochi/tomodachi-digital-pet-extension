@@ -177,7 +177,6 @@ export function useLastCheckIn(
   return { lastCheckIn, refresh };
 }
 
-// Fetch user's pets
 async function fetchPets(address: string, suiClient: any): Promise<Pet[]> {
   const { data } = await suiClient.getOwnedObjects({
     owner: address,
@@ -194,7 +193,6 @@ async function fetchPets(address: string, suiClient: any): Promise<Pet[]> {
   );
 }
 
-// Fetch user's assets
 async function fetchAssets(address: string, suiClient: any): Promise<Asset[]> {
   const { data } = await suiClient.getOwnedObjects({
     owner: address,

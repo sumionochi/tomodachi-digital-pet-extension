@@ -292,13 +292,18 @@ module tomodachiaddress::game {
         event::emit(UnequipEvent { user: tx_context::sender(ctx), pet_id: object::id(pet), asset_id });
     }
 
-    // === ADMIN FUNCTION: Reset user score ===
-    public entry fun admin_reset_score(
+    public entry fun admin_set_score(
         admin: &AdminCap,
         scores: &mut ScoreBoard,
-        user: address
+        user: address,
+        new_score: u64
     ) {
-        // Only callable by admin (by possession of AdminCap)
-        table::add(&mut scores.scores, user, 0);
+        if (table::contains(&scores.scores, user)) {
+            let score_ref = table::borrow_mut(&mut scores.scores, user);
+            *score_ref = new_score;
+        } else {
+            table::add(&mut scores.scores, user, new_score);
+        }
     }
+
 }

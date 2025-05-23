@@ -218,7 +218,6 @@ export async function equipAsset(
       tx.object(petId),
       tx.object(assetId),
       tx.object(EQUIPPED_ASSETS_ID),
-      tx.object("0x6"), // dummy TxContext, will be replaced by Sui
     ],
   });
   return signAndExecute({ transaction: tx });
@@ -239,18 +238,18 @@ export async function unequipAsset(
       tx.object(petId),
       tx.pure.id(assetId),
       tx.object(EQUIPPED_ASSETS_ID),
-      tx.object("0x6"), // dummy TxContext, will be replaced by Sui
     ],
   });
   return signAndExecute({ transaction: tx });
 }
 
-// 7. Admin reset score
-export async function adminResetScore(
+// 8. Admin set score
+export async function adminSetScore(
   address: string,
   suiClient: SuiClient,
   signAndExecute: any,
-  userAddress: string
+  userAddress: string,
+  newScore: number
 ) {
   const adminCapId = await findCap(
     address,
@@ -259,11 +258,12 @@ export async function adminResetScore(
   );
   const tx = new Transaction();
   tx.moveCall({
-    target: `${PACKAGE_ID}::${MODULE}::admin_reset_score`,
+    target: `${PACKAGE_ID}::${MODULE}::admin_set_score`,
     arguments: [
       tx.object(adminCapId),
       tx.object(SCOREBOARD_ID),
       tx.pure.address(userAddress),
+      tx.pure.u64(newScore),
     ],
   });
   return signAndExecute({ transaction: tx });

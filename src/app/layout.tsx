@@ -5,6 +5,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/ui/theme-provider";
 import { Providers } from "@/components/Providers";
 import "@mysten/dapp-kit/dist/index.css";
+import { Toaster } from "sonner";
 
 const nunito = Nunito({
   variable: "--font-nunito",
@@ -35,6 +36,7 @@ export default function RootLayout({
         <div className="texture" />
         <ThemeProvider attribute="class" defaultTheme="light">
           <Providers>{children}</Providers>
+          <Toaster position="top-right" />
         </ThemeProvider>
       </body>
     </html>
