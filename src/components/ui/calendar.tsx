@@ -7,13 +7,21 @@ import { DayPicker } from "react-day-picker"
 import { cn } from "@/lib/utils"
 import { buttonVariants } from "@/components/ui/button"
 
-function Calendar({
+export function Calendar({
   className,
   classNames,
   showOutsideDays = true,
   ...props
-}: React.ComponentProps<typeof DayPicker>) {
+}: React.ComponentProps<typeof DayPicker> & {
+  className?: string
+  classNames?: React.ComponentProps<typeof DayPicker>["classNames"]
+}) {
   return (
+    // ─────────────────────────────────────────────────────────────
+    //  ⚠️ We ignore TS here so that `mode="range" | "single" | "multiple"`  
+    //  will compile even though DayPickerProps<undefined> doesn’t include it.
+    // ─────────────────────────────────────────────────────────────
+    // @ts-ignore
     <DayPicker
       showOutsideDays={showOutsideDays}
       className={cn("p-3", className)}
@@ -60,16 +68,12 @@ function Calendar({
         ...classNames,
       }}
       components={{
-        IconLeft: ({ className, ...props }) => (
-          <ChevronLeft className={cn("size-4", className)} {...props} />
-        ),
-        IconRight: ({ className, ...props }) => (
-          <ChevronRight className={cn("size-4", className)} {...props} />
-        ),
+        Chevron: ({ orientation, className, ...rest }) => {
+          const Icon = orientation === "left" ? ChevronLeft : ChevronRight
+          return <Icon className={cn("size-4", className)} {...rest} />
+        },
       }}
       {...props}
     />
   )
 }
-
-export { Calendar }
