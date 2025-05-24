@@ -1,3 +1,5 @@
+/// <reference types="chrome" />
+
 // src/background/background.ts
 import { PetData, ExtensionMessage, Pet, Asset } from "../common/types";
 
