@@ -1,0 +1,5 @@
+#tomodachi-pet-container img,
+#tomodachi-pet-container canvas {
+  display: block;
+  pointer-events: none;
+}

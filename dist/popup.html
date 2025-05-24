@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Tomodachi Pet Settings</title>
+  <link rel="stylesheet" href="popup.css" />
+  <style>
+    body {
+      font-family: sans-serif;
+      width: 300px;
+      padding: 10px;
+      background-color: #f0f0f0;
+    }
+    #root h2 {
+      margin-top: 0;
+      color: #333;
+    }
+    #root label {
+      display: block;
+      margin-bottom: 5px;
+      color: #555;
+    }
+    #root input[type="text"] {
+      width: calc(100% - 22px);
+      padding: 8px;
+      margin-bottom: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    #root button {
+      background-color: #007bff;
+      color: white;
+      padding: 10px 15px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    #root button:hover {
+      background-color: #0056b3;
+    }
+    #root .pet-preview {
+      margin-top: 15px;
+      padding: 10px;
+      background-color: #fff;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    #root .pet-preview p {
+      margin: 5px 0;
+    }
+    #root .pet-preview img {
+      max-width: 100px;
+      max-height: 100px;
+      display: block;
+      margin: 5px auto;
+      border: 1px solid #eee;
+      border-radius: 3px;
+    }
+    #root .error {
+      color: red;
+      font-size: 0.9em;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Tomodachi Pets Settings</h1>
+    <div class="subtitle">Configure your digital companion</div>
+  </div>
+  <div id="root"></div>
+  <script src="popup.js"></script>
+  <link rel="icon" type="image/png" href="../../icons/icon48.png">
+</body>
+</html>
