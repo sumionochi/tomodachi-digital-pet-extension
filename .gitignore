@@ -37,7 +37,7 @@ yarn-error.log*
 .env*
 # vercel
 .vercel
-
+/tomodachi-pets-extension
 # typescript
 *.tsbuildinfo
 next-env.d.ts
