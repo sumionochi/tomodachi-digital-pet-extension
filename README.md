@@ -1,5 +1,12 @@
 # Tomodachi Pets Cursor Companion – Browser Extension
 
+| Resource          | Link                                                                                             |
+| ----------------- | ------------------------------------------------------------------------------------------------ |
+| Main Web App      | [Tomodachi Digital Pet](https://github.com/sumionochi/tomodachi-digital-pet)                     |
+| Browser Extension | [Tomodachi Digital Pet Extension](https://github.com/sumionochi/tomodachi-digital-pet-extension) |
+| Documentation     | [Tomodachi Pets Documentation](https://github.com/sumionochi/tomodachi-pets-documentation)       |
+| Demo Video        | [Demo Video on YouTube](https://www.youtube.com/watch?v=E1rkjZkNquI)                             |
+
 ## Project Overview
 
 Tomodachi Pets is an interactive NFT pet platform on the Sui blockchain. This browser extension, **Tomodachi Pets Cursor Companion**, brings your on-chain pet to life across the web. Once installed, it displays your **Tomodachi Pet NFT** (and its equipped accessory NFTs) as a cute, animated companion that **follows your cursor on every website**. The extension is a companion to the main Tomodachi Pets dApp – while the web app is where you **mint** pets and accessories and equip them on-chain, the extension lets you **carry your pet with you** outside the app, overlaying it on any webpage you visit.
