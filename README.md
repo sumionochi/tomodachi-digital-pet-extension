@@ -223,7 +223,7 @@ While the current version of the extension fulfills the core purpose, it’s bui
 
 Given the extension is built with familiar web technologies (React, TypeScript, CSS) and a clear separation of concerns, it’s quite approachable for contributors. The **key patterns (message passing, storage sync, data fetch)** are already in place. A developer looking to extend functionality can focus on the specific area (UI, content script, or backend) without needing to rewrite the whole system. We hope that this hackathon project not only serves as a fun demo but also as a foundation for more **innovative browser-based NFT interactions**, whether in Tomodachi or other projects that bridge web browsing with blockchain-owned digital assets.
 
-# Tomodachi Pets: Setup & Development Guide
+# Tomodachi Pets: Setup & Local Development Guide
 
 Tomodachi Pets is a virtual pet platform built on the Sui blockchain, featuring:
 
@@ -314,11 +314,21 @@ LAST_CHECKIN_ID=<YOUR_LAST_CHECKIN_ID>
    npm install
    ```
 
-2. **Set Environment Variables:**
+2. **Build & Publish Move Modules:**
 
-   * Place your `.env.local` file in the project root.
+   ```bash
+   cd move
+   sui move build
+   sui client publish --gas-budget 100000000
+   ```
 
-3. **Start the App:**
+   After publishing, copy the `package_id` and any object IDs printed (e.g., `scoreboard`, `mint_record`, etc.) into your web app `.env.local` under the corresponding `NEXT_PUBLIC_...` fields.
+
+3. **Set Environment Variables:**
+
+   * Place your `.env.local` file (with all `NEXT_PUBLIC_...` placeholders filled) in the project root.
+
+4. **Start the App:**
 
    ```bash
    npm run dev
@@ -373,6 +383,16 @@ LAST_CHECKIN_ID=<YOUR_LAST_CHECKIN_ID>
    * Enable Developer mode
    * Click Load unpacked and select the `tomodachi-pets-extension` folder (it must contain `manifest.json`)
    * The extension icon should appear in Chrome.
+
+📦 Move Contract Build & Publish
+
+Before running the extension backend, build and publish the Move package:
+
+```bash
+cd move
+sui move build
+sui client publish --gas-budget 100000000
+```
 
 🕹️ Using Tomodachi Pets
 
