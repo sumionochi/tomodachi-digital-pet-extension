@@ -222,3 +222,191 @@ While the current version of the extension fulfills the core purpose, it’s bui
 * **Theming and Pet Interaction:** Developers can also play with how the pet is displayed. For example, adding **speech bubbles** or reactions – the content script could inject a text bubble element near the pet and display messages (maybe the pet gives tips or fun quotes, possibly triggered by certain keywords on the page or at random intervals). The architecture makes it easy to add more DOM elements tied to the pet container. Similarly, accessories could have special behaviors (e.g., if an accessory is a music note, maybe it bounces in a sine wave pattern instead of static orbit; this could be coded in the showOrbitAsset logic specifically for that asset type).
 
 Given the extension is built with familiar web technologies (React, TypeScript, CSS) and a clear separation of concerns, it’s quite approachable for contributors. The **key patterns (message passing, storage sync, data fetch)** are already in place. A developer looking to extend functionality can focus on the specific area (UI, content script, or backend) without needing to rewrite the whole system. We hope that this hackathon project not only serves as a fun demo but also as a foundation for more **innovative browser-based NFT interactions**, whether in Tomodachi or other projects that bridge web browsing with blockchain-owned digital assets.
+
+# Tomodachi Pets: Setup & Development Guide
+
+Tomodachi Pets is a virtual pet platform built on the Sui blockchain, featuring:
+
+* A Next.js dApp for minting AI-generated pets and accessories as NFTs.
+* A browser extension that displays your NFT pets on any website using a local backend.
+
+This guide walks you through local installation for both the web app and browser extension.
+
+🚀 Prerequisites
+
+* Node.js (v16+ required, v18+ recommended)
+* npm (comes with Node)
+* Git
+* Google Chrome (for the browser extension)
+
+> Note: The web app runs on port 3000 and the extension backend on 3001 by default—ensure these ports are free, or adjust as needed.
+
+⚙️ Environment Variables
+Both projects require a `.env.local` file at the project root.
+
+**Web App (tomodachi-pets) `.env.local`**
+
+```env
+# Load environment variables from .env.local
+dotenv_config_path=.env.local
+
+# OpenAI API Key (for AI image generation)
+OPENAI_API_KEY=<YOUR_OPENAI_API_KEY>
+
+# Sui RPC Endpoint (for Walrus client)
+SUI_RPC_URL=<YOUR_SUI_RPC_URL>
+
+# Walrus network: testnet or mainnet
+WALRUS_NETWORK=<testnet|mainnet>
+NEXT_PUBLIC_WALRUS_PUBLISHER_URL=<YOUR_WALRUS_PUBLISHER_URL>
+NEXT_PUBLIC_WALRUS_BASE_URL=<YOUR_WALRUS_BASE_URL>
+NEXT_PUBLIC_WALRUS_EPOCHS=<EPOCH_NUMBER>
+
+# Signer secret (base64-encoded Ed25519 private key)
+SUI_SECRET_KEY=<YOUR_BASE64_ED25519_PRIVATE_KEY>
+
+# On-chain object IDs
+NEXT_PUBLIC_PACKAGE_ID=<YOUR_PACKAGE_ID>
+NEXT_PUBLIC_SCOREBOARD_ID=<YOUR_SCOREBOARD_ID>
+NEXT_PUBLIC_MINT_RECORD_ID=<YOUR_MINT_RECORD_ID>
+NEXT_PUBLIC_PET_NAMES_ID=<YOUR_PET_NAMES_ID>
+NEXT_PUBLIC_EQUIPPED_ASSETS_ID=<YOUR_EQUIPPED_ASSETS_ID>
+NEXT_PUBLIC_LAST_CHECKIN_ID=<YOUR_LAST_CHECKIN_ID>
+```
+
+**Extension (tomodachi-pets-extension) `.env.local`**
+
+```env
+# Load environment variables from .env.local
+dotenv_config_path=.env.local
+
+# OpenAI API Key (for image generation and backend use)
+OPENAI_API_KEY=<YOUR_OPENAI_API_KEY>
+
+# Sui RPC Endpoint (for Walrus client)
+SUI_RPC_URL=<YOUR_SUI_RPC_URL>
+
+# Walrus network: testnet or mainnet
+WALRUS_NETWORK=<testnet|mainnet>
+WALRUS_PUBLISHER_URL=<YOUR_WALRUS_PUBLISHER_URL>
+WALRUS_BASE_URL=<YOUR_WALRUS_BASE_URL>
+WALRUS_EPOCHS=<EPOCH_NUMBER>
+
+# Signer secret (base64-encoded Ed25519 private key)
+SUI_SECRET_KEY=<YOUR_BASE64_ED25519_PRIVATE_KEY>
+
+# Move contract IDs
+PACKAGE_ID=<YOUR_PACKAGE_ID>
+SCOREBOARD_ID=<YOUR_SCOREBOARD_ID>
+MINT_RECORD_ID=<YOUR_MINT_RECORD_ID>
+PET_NAMES_ID=<YOUR_PET_NAMES_ID>
+EQUIPPED_ASSETS_ID=<YOUR_EQUIPPED_ASSETS_ID>
+LAST_CHECKIN_ID=<YOUR_LAST_CHECKIN_ID>
+```
+
+🖥️ Web App Setup (`tomodachi-pets`)
+
+1. **Clone & Install:**
+
+   ```bash
+   git clone https://github.com/sumionochi/tomodachi-digital-pet.git tomodachi-pets
+   cd tomodachi-pets
+   npm install
+   ```
+
+2. **Set Environment Variables:**
+
+   * Place your `.env.local` file in the project root.
+
+3. **Start the App:**
+
+   ```bash
+   npm run dev
+   ```
+
+   This runs the Next.js app at [http://localhost:3000](http://localhost:3000).
+
+🧩 Extension Setup (`tomodachi-pets-extension`)
+
+1. **Clone & Install:**
+
+   ```bash
+   git clone https://github.com/sumionochi/tomodachi-digital-pet-extension.git tomodachi-pets-extension
+   cd tomodachi-pets-extension
+   npm install
+   ```
+
+2. **Set Environment Variables:**
+
+   * Place your `.env.local` file in the project root.
+
+3. **Build the Extension:**
+
+   ```bash
+   npm run build
+   ```
+
+   If you don’t have a build script, use:
+
+   ```bash
+   npx webpack
+   ```
+
+4. **Run the Backend Server:**
+
+   ```bash
+   node backend/server.js
+   ```
+
+   You should see:
+
+   ```text
+   Tomodachi backend listening on port 3001
+   Ensure PACKAGE_ID is set. Current: 0xYourPackageID
+   Ensure SCOREBOARD_ID is set. Current: 0xYourScoreboardID
+   Using SUI_RPC: https://fullnode.testnet.sui.io:443
+   ```
+
+5. **Load the Extension in Chrome:**
+
+   * Go to `chrome://extensions`
+   * Enable Developer mode
+   * Click Load unpacked and select the `tomodachi-pets-extension` folder (it must contain `manifest.json`)
+   * The extension icon should appear in Chrome.
+
+🕹️ Using Tomodachi Pets
+
+**Web App:**
+
+* Connect your Sui wallet, mint new pets/assets, and manage your collection.
+
+**Browser Extension:**
+
+1. Click the extension icon
+2. Enter your Sui wallet address and select your pet/NFT
+3. Toggle pet accessories as desired
+
+> Note: The extension’s backend (`server.js`) must be running for the extension to fetch blockchain data.
+
+🗂️ Project Structure & Flow
+
+* **Web App:** Minting/managing pets/assets (on-chain, AI-generated art, wallet auth).
+* **Extension:** Reads on-chain pet data and animates your pet on the web, fetching live state from your local backend.
+
+📝 Tips & Troubleshooting
+
+* **Ports:** If 3000/3001 are busy, change them in `.env.local` or with CLI flags.
+* **Node Version:** Use Node.js 16 or 18+.
+* **Dependencies:** Run npm install in both projects after cloning.
+* **Extension Loading:** Always load the root of the extension (where `manifest.json` lives).
+* **Chrome DevTools:** Use the console for extension logs or error debugging.
+
+📣 Support
+
+If you encounter issues, check:
+
+* Environment variables: Make sure `.env.local` files are present and correct in each repo.
+* Backend server: Ensure `node backend/server.js` is running for the extension.
+* Chrome DevTools: Inspect logs for the extension.
+
+For further assistance, open an issue in the respective GitHub repository.
